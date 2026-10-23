@@ -5,25 +5,25 @@
 
 ## 🏁 Фаза 1: Инфраструктура, База данных и Хранилище (MVP Core)
 
-- [ ] **1.1. Базовая настройка проекта**:
-  - [ ] Создать структуру каталогов FastAPI (`app/api`, `app/core`, `app/models`, `app/schemas`, `app/services`).
-  - [ ] Настроить конфигурацию через `pydantic-settings` (`.env`).
-  - [ ] Подготовить `docker-compose.yml` для локальной разработки (PostgreSQL, MinIO, Redis).
-- [ ] **1.2. Аутентификация и RBAC**:
-  - [ ] Модели SQLAlchemy `User`, `SpaceMember`.
-  - [ ] Хэширование паролей (`passlib` / `bcrypt` / `argon2`) и генерация JWT (Access + Refresh).
-  - [ ] FastAPI Dependencies для проверки прав (`get_current_user`, `require_superadmin`, `require_space_role`).
+- [x] **1.1. Базовая настройка проекта**:
+  - [x] Создать структуру каталогов FastAPI (`app/api`, `app/core`, `app/models`, `app/schemas`, `app/repositories`).
+  - [x] Настроить конфигурацию через `pydantic-settings` (`.env`).
+  - [x] Подготовить `docker-compose.yml` для локальной разработки (PostgreSQL, MinIO, Redis).
+- [x] **1.2. Аутентификация и RBAC**:
+  - [x] Модели SQLAlchemy `User`, `SpaceMember`.
+  - [x] Хэширование паролей (`bcrypt`) и генерация JWT (Access + Refresh).
+  - [x] FastAPI Dependencies для проверки прав (`get_current_user`, `require_superadmin`, `require_space_role`).
 - [ ] **1.3. Интеграция с MinIO**:
-  - [ ] Инициализация бакетов `spaces-public` и `spaces-staging` при старте.
-  - [ ] Сервис генерации Presigned S3 PUT URL для клиентских прямых загрузок.
+  - [x] Инициализация бакетов `spaces-public` и `spaces-staging` в docker-compose / minio-init.
+  - [ ] Сервис генерации Presigned S3 PUT URL для клиентских прямых загрузок (Зона Разработчика 2).
 
 ---
 
 ## 🗺️ Фаза 2: Пространства, Этажи и 2D-редактор
 
-- [ ] **2.1. Управление пространствами и этажами**:
-  - [ ] CRUD для `spaces` (создание, редактирование, статус публикации).
-  - [ ] CRUD для `floors` (создание этажей, масштаб `ppm` — пикселей на метр).
+- [x] **2.1. Управление пространствами и этажами**:
+  - [x] CRUD для `spaces` (создание, редактирование, статус публикации).
+  - [x] CRUD для `floors` (создание этажей, масштаб `ppm` — пикселей на метр).
 - [ ] **2.2. Загрузка и обработка 2D-планов**:
   - [ ] Эндпоинт получения Presigned URL для загрузки чертежа/плана.
   - [ ] Фоновая обработка плана: конвертация в WebP, расчет пропорций (width, height), генерация миниатюр.
@@ -68,8 +68,8 @@
 ## 📱 Фаза 5: Оптимизация для мобильных устройств и Публичный API
 
 - [ ] **5.1. Публичные эндпоинты**:
-  - [ ] `GET /api/v1/public/spaces/{slug}` — единый кэшируемый бандл данных для посетителя.
-  - [ ] `GET /api/v1/public/panoramas/{id}` — легковесный JSON с Blurhash и путями к тайлам.
+  - [x] `GET /api/v1/public/spaces/{slug}` — единый кэшируемый бандл данных для посетителя.
+  - [ ] `GET /api/v1/public/panoramas/{id}` — легковесный JSON с Blurhash и путями к тайлам (Зона Разработчика 2).
 - [ ] **5.2. Мобильный UX и PWA (Фронтенд)**:
   - [ ] Подключение Pannellum / Marzipano для рендера панорам с гироскопом.
   - [ ] Подключение Leaflet с кастомным `L.CRS.Simple` для отображения чертежа этажа.
