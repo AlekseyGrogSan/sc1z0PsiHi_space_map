@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive } from 'vue'
-import { spacesApi } from '../../../api/index.js'
+import { spacesApi } from '../../../api'
 import { X } from 'lucide-vue-next'
 
 const emit = defineEmits(['close', 'created'])

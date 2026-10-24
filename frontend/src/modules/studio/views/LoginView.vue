@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { authApi } from '../../../api/index.js'
+import { authApi } from '../../../api'
 import { LogIn, Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()

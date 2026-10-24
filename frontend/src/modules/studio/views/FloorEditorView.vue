@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { floorsApi, poisApi, navApi, spacesApi } from '../../../api/index.js'
+import { floorsApi, poisApi, navApi, spacesApi } from '../../../api'
 import FloorSidebar from '../components/FloorSidebar.vue'
 import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'

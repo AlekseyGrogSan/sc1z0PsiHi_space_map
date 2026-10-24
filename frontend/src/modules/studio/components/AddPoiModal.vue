@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { poisApi } from '../../../api/index.js'
+import { poisApi } from '../../../api'
 import { X, MapPin } from 'lucide-vue-next'
 
 const props = defineProps({

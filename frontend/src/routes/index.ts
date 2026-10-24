@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
@@ -46,7 +46,7 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('access_token')
   if (to.meta.requiresAuth && !token) {
     next('/login')

@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { floorsApi } from '../../../api/index.js'
+import { floorsApi } from '../../../api'
 import {
   MousePointer2, MapPin, GitFork, Upload, Ruler, ChevronDown,
   Plus, Check, X, Layers, Info

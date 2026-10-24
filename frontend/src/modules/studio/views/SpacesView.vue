@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { spacesApi, floorsApi } from '../../../api/index.js'
+import { spacesApi, floorsApi } from '../../../api'
 import SpaceCard from '../components/SpaceCard.vue'
 import CreateSpaceModal from '../components/CreateSpaceModal.vue'
 import { Plus, RefreshCw } from 'lucide-vue-next'

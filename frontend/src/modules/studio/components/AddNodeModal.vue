@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { navApi } from '../../../api/index.js'
+import { navApi } from '../../../api'
 import { X, GitFork } from 'lucide-vue-next'
 
 const props = defineProps({

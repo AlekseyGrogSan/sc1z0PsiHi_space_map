@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive } from 'vue'
-import { floorsApi } from '../../../api/index.js'
+import { floorsApi } from '../../../api'
 import { Upload, X, FileImage, CheckCircle } from 'lucide-vue-next'
 
 const props = defineProps({ floorId: [String, Number] })
