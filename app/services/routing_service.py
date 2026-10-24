@@ -135,30 +135,86 @@ def _floor_or_error(ctx: _GraphContext, floor_id: uuid.UUID, what: str) -> Floor
     return floor
 
 
+from app.services.auto_graph import is_segment_clear
+from app.services.pathfinder import (
+    WALKING_SPEED_MPS,
+    EdgeProjection,
+    GraphEdge,
+    GraphNode,
+    astar,
+    bearing_deg,
+    build_adjacency,
+    euclidean_px,
+    find_candidate_edge_projections,
+    find_nearest_edge_projection,
+    find_nearest_node,
+)
+
+
 def _entry_candidates(
     ctx: _GraphContext,
     x: float,
     y: float,
     floor: Floor,
     what: str,
+    walls: Optional[List[Dict[str, float]]] = None,
+    circle_obstacles: Optional[List[Dict[str, float]]] = None,
+    rect_obstacles: Optional[List[Dict[str, float]]] = None,
 ) -> Tuple[List[uuid.UUID], Optional[EdgeProjection]]:
     """
     Кандидаты на вход в граф: вершины ближайшего к точке коридорного ребра
-    этажа. Если точка проецируется близко (<40% длины ребра) к одной из
+    этажа, к которому есть чистый проход без пересечения стен.
+    Если точка проецируется близко (<40% длины ребра) к одной из
     вершин, возвращается только эта вершина — иначе обе.
 
-    Fallback — ближайшая вершина этажа (если рёбер нет вовсе).
+    Если все ближайшие рёбра заблокированы стенами — ищутся видимые вершины
+    этажа в той же комнате. Fallback — ближайшая вершина / ребро этажа.
     """
-    projection = find_nearest_edge_projection(
-        x, y, floor.id, ctx.nodes, ctx.edges.values()
+    walls_list = walls or []
+    circles_list = circle_obstacles or []
+    rects_list = rect_obstacles or []
+
+    # 1. Поиск ближайших проекций на коридорные рёбра этажа
+    edge_projections = find_candidate_edge_projections(
+        x, y, floor.id, ctx.nodes, ctx.edges.values(), limit=12
     )
-    if projection is not None:
-        # Если точка практически лежит у одной из вершин ребра — достаточно
-        # только этой вершины, иначе обе. Порог 0.4/0.6 выбран
-        # эвристически: POI возле стенда реально находится прямо у вершины
-        # графа, а не на полпути по коридору (второй конец ребра был бы
-        # ложным кандидатом, дающим пешеходу команду «пройти 6 м через
-        # открытое пространство»).
+
+    # Если заданы стены/препятствия, фильтруем те рёбра, проход к которым режет стену
+    valid_projections = []
+    if walls_list or circles_list or rects_list:
+        for proj in edge_projections:
+            if is_segment_clear(
+                (x, y), (proj.proj_x, proj.proj_y), walls_list, circles_list, rects_list
+            ):
+                valid_projections.append(proj)
+    else:
+        valid_projections = edge_projections
+
+    if valid_projections:
+        projection = valid_projections[0]
+        if projection.t <= 0.4:
+            return [projection.edge.from_node_id], projection
+        if projection.t >= 0.6:
+            return [projection.edge.to_node_id], projection
+        return [projection.edge.from_node_id, projection.edge.to_node_id], projection
+
+    # 2. Если все проекции на рёбра за стеной (например, точка А в комнате без готового ребра),
+    # ищем видимые вершины этажа по прямой без пересечения стен:
+    visible_nodes: List[Tuple[uuid.UUID, float]] = []
+    floor_nodes = [n for n in ctx.nodes.values() if n.floor_id == floor.id]
+    for n in floor_nodes:
+        dist = euclidean_px(x, y, n.x, n.y)
+        if dist <= 600.0:
+            if is_segment_clear((x, y), (n.x, n.y), walls_list, circles_list, rects_list):
+                visible_nodes.append((n.id, dist))
+
+    if visible_nodes:
+        visible_nodes.sort(key=lambda item: item[1])
+        return [item[0] for item in visible_nodes[:6]], None
+
+    # 3. Fallback: ближайшая проекция из всех
+    if edge_projections:
+        projection = edge_projections[0]
         if projection.t <= 0.4:
             return [projection.edge.from_node_id], projection
         if projection.t >= 0.6:
@@ -184,10 +240,22 @@ def _choose_route(
     targets: List[uuid.UUID],
     proj_a: Optional[EdgeProjection],
     proj_b: Optional[EdgeProjection],
+    start_walls: Optional[List[Dict[str, float]]] = None,
+    start_circles: Optional[List[Dict[str, float]]] = None,
+    start_rects: Optional[List[Dict[str, float]]] = None,
+    target_walls: Optional[List[Dict[str, float]]] = None,
+    target_circles: Optional[List[Dict[str, float]]] = None,
+    target_rects: Optional[List[Dict[str, float]]] = None,
 ) -> _Candidate:
-    """Перебирает кандидатов A* и выбирает маршрут минимальной стоимости."""
+    """Перебирает кандидатов A* и выбирает маршрут минимальной стоимости без коллизий со стенами."""
     best: Optional[_Candidate] = None
     target_set = set(targets)
+    s_walls = start_walls or []
+    s_circles = start_circles or []
+    s_rects = start_rects or []
+    t_walls = target_walls or []
+    t_circles = target_circles or []
+    t_rects = target_rects or []
 
     for start_id in starts:
         result = astar(
@@ -204,8 +272,16 @@ def _choose_route(
         end_node = ctx.nodes[end_id]
         approach_m = euclidean_px(req.x, req.y, start_node.x, start_node.y) / start_floor.ppm
         exit_m = euclidean_px(end_node.x, end_node.y, poi.x_coord, poi.y_coord) / target_floor.ppm
+
+        # Штраф за проход подхода или схода сквозь стены (чтобы маршрут не резал стены комнат)
+        penalty_m = 0.0
+        if not is_segment_clear((req.x, req.y), (start_node.x, start_node.y), s_walls, s_circles, s_rects):
+            penalty_m += 1000.0
+        if not is_segment_clear((end_node.x, end_node.y), (poi.x_coord, poi.y_coord), t_walls, t_circles, t_rects):
+            penalty_m += 1000.0
+
         candidate = _Candidate(
-            total_meters=approach_m + result.total_meters + exit_m,
+            total_meters=approach_m + result.total_meters + exit_m + penalty_m,
             start_node_id=start_id,
             end_node_id=end_id,
             path_node_ids=result.node_ids,
@@ -217,11 +293,13 @@ def _choose_route(
             best = candidate
 
     # Вырожденный случай: А и POI проецируются на ОДНО коридорное ребро —
-    # можно пройти вдоль него, не заходя в вершины.
+    # можно пройти вдоль него, ТОЛЬКО если отрезок А -> POI свободен от стен!
     if (
         proj_a is not None
         and proj_b is not None
         and proj_a.edge.id == proj_b.edge.id
+        and start_floor.id == target_floor.id
+        and is_segment_clear((req.x, req.y), (poi.x_coord, poi.y_coord), s_walls, s_circles, s_rects)
     ):
         edge = proj_a.edge
         along_m = abs(proj_a.t - proj_b.t) * edge.weight_meters
@@ -372,13 +450,58 @@ async def build_route(
 
     target_floor = _floor_or_error(ctx, poi.floor_id, "Этаж целевой POI")
 
-    # --- Кандидаты на вход/выход ---
-    starts, proj_a = _entry_candidates(ctx, req.x, req.y, start_floor, "точка А")
-    targets, proj_b = _entry_candidates(ctx, poi.x_coord, poi.y_coord, target_floor, "POI")
+    start_layout = start_floor.layout_data or {}
+    target_layout = target_floor.layout_data or {}
+
+    start_walls = start_layout.get("walls", [])
+    start_circles = [
+        {"x": float(o["x"]), "y": float(o["y"]), "radius": float(o.get("radius", 30))}
+        for o in start_layout.get("obstacles", [])
+        if o.get("type") == "circle"
+    ]
+    start_rects = [
+        {
+            "x": float(o["x"]),
+            "y": float(o["y"]),
+            "width": float(o.get("width", 50)),
+            "height": float(o.get("height", 50)),
+        }
+        for o in start_layout.get("obstacles", [])
+        if o.get("type") == "rect"
+    ]
+
+    target_walls = target_layout.get("walls", [])
+    target_circles = [
+        {"x": float(o["x"]), "y": float(o["y"]), "radius": float(o.get("radius", 30))}
+        for o in target_layout.get("obstacles", [])
+        if o.get("type") == "circle"
+    ]
+    target_rects = [
+        {
+            "x": float(o["x"]),
+            "y": float(o["y"]),
+            "width": float(o.get("width", 50)),
+            "height": float(o.get("height", 50)),
+        }
+        for o in target_layout.get("obstacles", [])
+        if o.get("type") == "rect"
+    ]
+
+    # --- Кандидаты на вход/выход с учётом стен и препятствий ---
+    starts, proj_a = _entry_candidates(
+        ctx, req.x, req.y, start_floor, "точка А",
+        walls=start_walls, circle_obstacles=start_circles, rect_obstacles=start_rects
+    )
+    targets, proj_b = _entry_candidates(
+        ctx, poi.x_coord, poi.y_coord, target_floor, "POI",
+        walls=target_walls, circle_obstacles=target_circles, rect_obstacles=target_rects
+    )
 
     # --- Выбор лучшего маршрута ---
     best = _choose_route(
-        ctx, req, poi, start_floor, target_floor, starts, targets, proj_a, proj_b
+        ctx, req, poi, start_floor, target_floor, starts, targets, proj_a, proj_b,
+        start_walls=start_walls, start_circles=start_circles, start_rects=start_rects,
+        target_walls=target_walls, target_circles=target_circles, target_rects=target_rects,
     )
 
     # --- Сборка ответа ---

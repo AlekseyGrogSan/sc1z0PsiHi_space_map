@@ -125,3 +125,99 @@ async def test_auto_graph_api_and_route_around_corner(client: AsyncClient, auth_
     assert "points" in route
     assert len(route["points"]) >= 2
     assert route["total_distance_meters"] > 0
+
+
+@pytest.mark.asyncio
+async def test_route_from_room_to_room_arbitrary_start_avoids_walls(
+    client: AsyncClient, auth_headers: dict
+):
+    """
+    Проверяет сценарий из баг-репорта (Лёша/Вадим):
+    Маршрут из произвольной точки Комнаты 2 в Комнату 1 должен
+    проходить через дверной проём и огибать стены, а не резать стены напрямую.
+    """
+    # 1. Создаем пространство
+    space_resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Офис двух зон", "slug": "office-2rooms"},
+    )
+    space_id = space_resp.json()["id"]
+
+    # 2. Планировка двух комнат (Зона 2 сверху-слева, Зона 1 снизу-справа с проходом)
+    layout = {
+        "rooms": [
+            {"id": "r1", "title": "ЗОНА 2", "x": 350, "y": 380, "width": 270, "height": 130},
+            {"id": "r2", "title": "ЗОНА 1", "x": 570, "y": 500, "width": 220, "height": 270},
+        ],
+        "walls": [
+            # Зона 2: стены с дверным проходом справа (y: 440..510)
+            {"x1": 350, "y1": 380, "x2": 620, "y2": 380},
+            {"x1": 350, "y1": 380, "x2": 350, "y2": 510},
+            {"x1": 350, "y1": 510, "x2": 620, "y2": 510},  # глухая разделяющая стена между Зоной 2 и коридором
+            {"x1": 620, "y1": 380, "x2": 620, "y2": 440},  # проход 440..510
+            # Зона 1: стены со входом сверху (x: 570..640) и входом снизу
+            {"x1": 640, "y1": 500, "x2": 790, "y2": 500},
+            {"x1": 790, "y1": 500, "x2": 790, "y2": 770},
+            {"x1": 790, "y1": 770, "x2": 660, "y2": 770},
+            {"x1": 570, "y1": 770, "x2": 600, "y2": 770},
+            {"x1": 570, "y1": 500, "x2": 570, "y2": 770},
+        ],
+        "corridors": [],
+        "obstacles": [],
+    }
+
+    floor_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/floors",
+        headers=auth_headers,
+        json={
+            "floor_number": 1,
+            "title": "1 этаж",
+            "ppm": 20.0,
+            "layout_data": layout,
+        },
+    )
+    floor_id = floor_resp.json()["id"]
+
+    # 3. Добавляем POI: Стол в Зоне 2 и Вход в Зоне 1
+    table_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/pois",
+        headers=auth_headers,
+        json={"title": "Стол", "category": "info", "x_coord": 550.0, "y_coord": 420.0},
+    )
+    entrance_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/pois",
+        headers=auth_headers,
+        json={"title": "Вход", "category": "entrance", "x_coord": 630.0, "y_coord": 770.0},
+    )
+    entrance_id = entrance_resp.json()["id"]
+
+    # 4. Автогенерация графа
+    auto_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/navigation/auto-graph",
+        headers=auth_headers,
+    )
+    assert auto_resp.status_code == 200
+
+    # 5. Проверяем построение маршрута из произвольной точки Зоны 2 (400, 450)
+    route_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/navigation/route",
+        json={
+            "floor_id": floor_id,
+            "x": 400.0,
+            "y": 450.0,
+            "to_poi_id": entrance_id,
+        },
+    )
+    assert route_resp.status_code == 200
+    route = route_resp.json()
+    assert route["total_distance_meters"] > 0
+    points = route["points"]
+    assert len(points) >= 3  # Маршрут должен огибать стену через проём, а не быть прямой линией из 2 точек
+
+    # Проверяем, что ни один отрезок маршрута не режет сплошную стену (350..620, y=510)
+    dividing_wall = {"x1": 350.0, "y1": 510.0, "x2": 620.0, "y2": 510.0}
+    for k in range(len(points) - 1):
+        p1 = (points[k]["x"], points[k]["y"])
+        p2 = (points[k + 1]["x"], points[k + 1]["y"])
+        assert is_segment_clear(p1, p2, [dividing_wall], [], []), f"Отрезок {p1}->{p2} режет стену!"

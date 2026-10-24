@@ -19,6 +19,7 @@ class FloorRepository:
             floor_number=floor_in.floor_number,
             title=floor_in.title,
             ppm=floor_in.ppm,
+            layout_data=floor_in.layout_data or {},
         )
         db.add(floor)
         await db.flush()

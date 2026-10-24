@@ -40,7 +40,7 @@ def line_intersection(
     ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom
 
     # Строгое пересечение внутри отрезков
-    return 0.01 <= ua <= 0.99 and 0.01 <= ub <= 0.99
+    return 0.005 <= ua <= 0.995 and 0.005 <= ub <= 0.995
 
 
 def distance_point_to_segment(
@@ -67,8 +67,8 @@ def is_segment_clear(
     """Проверяет, свободен ли отрезок p1-p2 от стен и препятствий."""
     # 1. Проверка пересечения со стенами
     for w in walls:
-        w_p1 = (w["x1"], w["y1"])
-        w_p2 = (w["x2"], w["y2"])
+        w_p1 = (float(w["x1"]), float(w["y1"]))
+        w_p2 = (float(w["x2"]), float(w["y2"]))
         if line_intersection(p1, p2, w_p1, w_p2):
             return False
 
@@ -132,12 +132,11 @@ def generate_auto_graph(
     edges_set: Set[Tuple[int, int]] = set()
 
     def add_node(x: float, y: float, node_type: str = "walkway") -> int:
-        # Ограничиваем координаты границами плана
         cx = max(10.0, min(float(width) - 10.0, round(x, 1)))
         cy = max(10.0, min(float(height) - 10.0, round(y, 1)))
-        # Проверяем, нет ли уже узла в этой же точке (радиус 15px)
+        # Проверяем существующие узлы в радиусе 12px
         for idx, n in enumerate(nodes):
-            if math.hypot(n["x"] - cx, n["y"] - cy) < 15.0:
+            if math.hypot(n["x"] - cx, n["y"] - cy) < 12.0:
                 return idx
         idx = len(nodes)
         nodes.append({
@@ -157,28 +156,37 @@ def generate_auto_graph(
             pair = (min(idx1, idx2), max(idx1, idx2))
             edges_set.add(pair)
 
-    # 1. Добавляем точки прикрепления для всех POI
+    # 1. Точки прикрепления для всех POI (поддержка ORM моделей и dict)
     poi_node_indices: List[int] = []
     for poi in pois:
-        px = getattr(poi, "x_coord", None) or getattr(poi, "x", 0.0)
-        py = getattr(poi, "y_coord", None) or getattr(poi, "y", 0.0)
-        category = getattr(poi, "category", "")
-        if isinstance(category, str):
-            category_val = category
-        else:
-            category_val = getattr(category, "value", "")
+        px = (
+            getattr(poi, "x_coord", None)
+            or getattr(poi, "x", None)
+            or (poi.get("x_coord") if isinstance(poi, dict) else None)
+            or (poi.get("x") if isinstance(poi, dict) else 0.0)
+        )
+        py = (
+            getattr(poi, "y_coord", None)
+            or getattr(poi, "y", None)
+            or (poi.get("y_coord") if isinstance(poi, dict) else None)
+            or (poi.get("y") if isinstance(poi, dict) else 0.0)
+        )
+        cat = (
+            getattr(poi, "category", None)
+            or (poi.get("category") if isinstance(poi, dict) else "")
+        )
+        category_val = cat if isinstance(cat, str) else getattr(cat, "value", "")
 
         node_type = "door" if category_val in ("entrance", "exit") else "walkway"
-        poi_idx = add_node(px, py, node_type=node_type)
+        poi_idx = add_node(float(px), float(py), node_type=node_type)
         poi_node_indices.append(poi_idx)
 
-    # 2. Добавляем узлы и огибание для круглых объектов (колонны, круглые стенды)
+    # 2. Узлы и огибание для круглых объектов
     circle_ring_indices: List[List[int]] = []
     for c in circle_obstacles:
         cx, cy, r = c["x"], c["y"], c["radius"]
-        clearance = r + 30.0  # Отступ безопасности от объекта
+        clearance = r + 30.0
         ring_indices: List[int] = []
-        # 8 точек обхода по кругу
         for k in range(8):
             angle = k * (2 * math.pi / 8)
             bx = cx + clearance * math.cos(angle)
@@ -186,12 +194,11 @@ def generate_auto_graph(
             n_idx = add_node(bx, by, node_type="walkway")
             ring_indices.append(n_idx)
 
-        # Соединяем соседние точки кольца обхода
         for k in range(8):
             add_edge(ring_indices[k], ring_indices[(k + 1) % 8])
         circle_ring_indices.append(ring_indices)
 
-    # 3. Добавляем узлы огибания для прямоугольных препятствий
+    # 3. Узлы огибания для прямоугольных препятствий
     rect_corner_indices: List[List[int]] = []
     for r in rect_obstacles:
         rx, ry, rw, rh = r["x"], r["y"], r["width"], r["height"]
@@ -207,15 +214,17 @@ def generate_auto_graph(
             add_edge(c_indices[k], c_indices[(k + 1) % 4])
         rect_corner_indices.append(c_indices)
 
-    # 3.1. Добавляем узлы обхода углов и поворотов стен
+    # 3.1. Узлы обхода углов и поворотов стен
+    wall_endpoints: List[Tuple[float, float]] = []
     for w in walls:
         x1, y1 = float(w["x1"]), float(w["y1"])
         x2, y2 = float(w["x2"]), float(w["y2"])
+        wall_endpoints.extend([(x1, y1), (x2, y2)])
         dx, dy = x2 - x1, y2 - y1
         length = math.hypot(dx, dy)
         if length > 1e-3:
             ux, uy = dx / length, dy / length
-            nx, ny = -uy, ux  # нормаль
+            nx, ny = -uy, ux
             margin = 35.0
             wall_bypasses = [
                 (x1 - margin * ux, y1 - margin * uy),
@@ -247,24 +256,51 @@ def generate_auto_graph(
                     if clear_point:
                         add_node(bx, by, node_type="walkway")
 
-    # 4. Добавляем узлы для комнат и центров зон
-    room_center_indices: List[int] = []
+    # 3.2. Авто-обнаружение дверных проёмов (проходов между концами стен)
+    doorway_node_indices: List[int] = []
+    for i, ep1 in enumerate(wall_endpoints):
+        for j, ep2 in enumerate(wall_endpoints):
+            if i >= j:
+                continue
+            gap = math.hypot(ep2[0] - ep1[0], ep2[1] - ep1[1])
+            # Дверной проём обычно от 25 до 140 пикселей между концами стен
+            if 25.0 <= gap <= 140.0:
+                door_mid_x = (ep1[0] + ep2[0]) / 2.0
+                door_mid_y = (ep1[1] + ep2[1]) / 2.0
+                door_idx = add_node(door_mid_x, door_mid_y, node_type="door")
+                doorway_node_indices.append(door_idx)
+
+    # 4. Узлы для комнат и центров зон (+ внутренние точки сетки для больших зон)
+    room_node_indices: List[int] = []
     for room in rooms:
         rx = float(room.get("x", 0))
         ry = float(room.get("y", 0))
         rw = float(room.get("width", 200))
         rh = float(room.get("height", 150))
-        rc_idx = add_node(rx + rw / 2, ry + rh / 2, node_type="walkway")
-        room_center_indices.append(rc_idx)
+        # Центральный узел комнаты
+        rc_idx = add_node(rx + rw / 2.0, ry + rh / 2.0, node_type="walkway")
+        room_node_indices.append(rc_idx)
 
-    # 5. Добавляем коридоры / проходы (если они начерчены в редакторе)
+        # Если комната большая, добавляем узлы сетки внутри зоны для доступности произвольных точек
+        if rw >= 120.0 or rh >= 120.0:
+            sub_points = [
+                (rx + rw * 0.25, ry + rh * 0.25),
+                (rx + rw * 0.75, ry + rh * 0.25),
+                (rx + rw * 0.25, ry + rh * 0.75),
+                (rx + rw * 0.75, ry + rh * 0.75),
+            ]
+            for sx, sy in sub_points:
+                sub_idx = add_node(sx, sy, node_type="walkway")
+                room_node_indices.append(sub_idx)
+                add_edge(rc_idx, sub_idx)
+
+    # 5. Коридоры / проходы
     corridor_node_indices: List[int] = []
     for corr in corridors:
         x1, y1 = float(corr["x1"]), float(corr["y1"])
         x2, y2 = float(corr["x2"]), float(corr["y2"])
         length = math.hypot(x2 - x1, y2 - y1)
-        # Разбиваем длинный коридор на шаги по ~100px для плавного построения маршрута
-        steps = max(1, int(length // 100))
+        steps = max(1, int(length // 80))
         prev_idx = add_node(x1, y1, node_type="walkway")
         corridor_node_indices.append(prev_idx)
         for s in range(1, steps + 1):
@@ -274,32 +310,40 @@ def generate_auto_graph(
             add_edge(prev_idx, curr_idx)
             prev_idx = curr_idx
 
-    # 6. Если коридоров мало или нет, генерируем сетку видимости (visibility graph)
-    # Соединяем POI и центры комнат с ближайшими узлами обхода препятствий и между собой
+    # 6. Сетка видимости (Visibility Graph)
     all_key_nodes = list(range(len(nodes)))
     for i in all_key_nodes:
         p1 = (nodes[i]["x"], nodes[i]["y"])
-        # Сортируем остальных кандидатов по расстоянию
         candidates: List[Tuple[float, int]] = []
         for j in all_key_nodes:
             if i == j:
                 continue
             p2 = (nodes[j]["x"], nodes[j]["y"])
             dist = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
-            # Ограничиваем максимальное расстояние связности (до 450px)
-            if dist <= 450.0:
+            if dist <= 550.0:
                 candidates.append((dist, j))
 
         candidates.sort(key=lambda item: item[0])
-        # Соединяем с 5-8 ближайшими видимыми узлами
         connected_count = 0
         for dist, j in candidates:
-            if connected_count >= 6:
+            if connected_count >= 14:
                 break
             p2 = (nodes[j]["x"], nodes[j]["y"])
             if is_segment_clear(p1, p2, walls, circle_obstacles, rect_obstacles):
                 add_edge(i, j)
                 connected_count += 1
+
+    # Соединяем дверные проёмы и центры комнат со всеми видимыми ключевыми узлами
+    cross_room_nodes = doorway_node_indices + room_node_indices + poi_node_indices
+    for cr_idx in cross_room_nodes:
+        p1 = (nodes[cr_idx]["x"], nodes[cr_idx]["y"])
+        for other_idx in cross_room_nodes:
+            if cr_idx == other_idx:
+                continue
+            p2 = (nodes[other_idx]["x"], nodes[other_idx]["y"])
+            dist = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+            if dist <= 700.0 and is_segment_clear(p1, p2, walls, circle_obstacles, rect_obstacles):
+                add_edge(cr_idx, other_idx)
 
     # Гарантируем, что каждая POI соединена хотя бы с 1 ближайшим видимым узлом
     for poi_idx in poi_node_indices:

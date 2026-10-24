@@ -197,7 +197,26 @@ def find_nearest_edge_projection(
     от точки до отрезка ребра. Рассматриваются только рёбра указанных типов,
     обе вершины которых лежат на заданном этаже.
     """
-    best: Optional[EdgeProjection] = None
+    candidates = find_candidate_edge_projections(
+        x, y, floor_id, nodes, edges, allowed_kinds, limit=1
+    )
+    return candidates[0] if candidates else None
+
+
+def find_candidate_edge_projections(
+    x: float,
+    y: float,
+    floor_id: uuid.UUID,
+    nodes: Dict[uuid.UUID, GraphNode],
+    edges: Iterable[GraphEdge],
+    allowed_kinds: Set[str] = frozenset({"corridor"}),
+    limit: int = 5,
+) -> List[EdgeProjection]:
+    """
+    Возвращает список ближайших к точке (x, y) рёбер этажа, отсортированных
+    по евклидову расстоянию до отрезка.
+    """
+    projections: List[EdgeProjection] = []
     for edge in edges:
         if edge.kind not in allowed_kinds:
             continue
@@ -208,9 +227,11 @@ def find_nearest_edge_projection(
         if a.floor_id != floor_id or b.floor_id != floor_id:
             continue
         proj_x, proj_y, t, dist = project_point_on_segment(x, y, a.x, a.y, b.x, b.y)
-        if best is None or dist < best.distance_px:
-            best = EdgeProjection(edge=edge, proj_x=proj_x, proj_y=proj_y, t=t, distance_px=dist)
-    return best
+        projections.append(
+            EdgeProjection(edge=edge, proj_x=proj_x, proj_y=proj_y, t=t, distance_px=dist)
+        )
+    projections.sort(key=lambda p: p.distance_px)
+    return projections[:limit]
 
 
 def find_nearest_node(
