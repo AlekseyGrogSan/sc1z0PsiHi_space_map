@@ -18,16 +18,27 @@ async function handleRegister() {
   loading.value = true
   error.value = ''
   try {
-    await authApi.register({ username: form.username, email: form.email, password: form.password })
-    // Auto-login
-    const params = new URLSearchParams()
-    params.append('username', form.username)
-    params.append('password', form.password)
-    const { data } = await authApi.login(params)
+    await authApi.register({
+      full_name: form.username,
+      email: form.email,
+      password: form.password,
+    })
+    // Auto-login: бэкенд ожидает JSON { username: email, password }
+    const { data } = await authApi.login({
+      username: form.email,
+      password: form.password,
+    })
     localStorage.setItem('access_token', data.access_token)
     router.push('/admin/spaces')
   } catch (e) {
-    error.value = e.response?.data?.detail || 'Ошибка регистрации'
+    const detail = e.response?.data?.detail
+    if (typeof detail === 'string') {
+      error.value = detail
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      error.value = detail[0]?.msg || 'Ошибка валидации'
+    } else {
+      error.value = 'Ошибка регистрации'
+    }
   } finally {
     loading.value = false
   }
