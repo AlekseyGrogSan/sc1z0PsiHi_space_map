@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from fastapi import FastAPI, status
@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from app.api.v1.api_router import api_v1_router
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.services.s3 import s3_service
 
+logger = logging.getLogger("uvicorn.info")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -16,10 +18,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Ensure database schema is created on startup in development
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Startup: Проверка и создание бакетов MinIO
+    try:
+        await s3_service.ensure_buckets_exist()
+        logger.info("MinIO бакеты готовы к работе.")
+    except Exception as e:
+        logger.warning(f"Не удалось инициализировать S3 на старте: {e}")
+
     yield
+
     # Cleanup resources on shutdown
     await engine.dispose()
-
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -35,53 +45,13 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
-=======
-import logging
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-from app.api.v1.media import router as media_router
-from app.api.v1.panoramas import router as panoramas_router
-from app.core.config import settings
-from app.services.s3 import s3_service
-
-logger = logging.getLogger("uvicorn.info")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Проверка и создание бакетов MinIO
-    logger.info("Инициализация сервисов и проверка бакетов S3/MinIO...")
-    try:
-        await s3_service.ensure_buckets_exist()
-        logger.info("MinIO бакеты готовы к работе.")
-    except Exception as e:
-        logger.warning(f"Не удалось инициализировать S3 на старте (проверьте запуск MinIO): {e}")
-
-    yield
-    logger.info("Остановка бэкенд сервиса.")
-
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    description="Бэкенд сервиса навигации внутри помещений, 2D-планов и виртуального 3D-тура панорам (ТТК).",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# Настройка CORS для мобильных браузеров и веб-клиента
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
 # Mount API Routers
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)
-
 
 @app.get(
     "/health",
@@ -90,8 +60,11 @@ app.include_router(api_v1_router, prefix=settings.API_V1_STR)
     summary="Health check сервиса",
 )
 async def health_check() -> dict[str, str]:
-    return {"status": "ok", "version": "1.0.0"}
-
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "s3_endpoint": settings.S3_ENDPOINT,
+    }
 
 @app.get(
     "/",
@@ -107,16 +80,3 @@ async def root() -> JSONResponse:
             "api_version": settings.API_V1_STR,
         }
     )
-=======
-# Подключение роутеров Разработчика 2 (Media Engine & Panoramas)
-app.include_router(panoramas_router, prefix=settings.API_V1_PREFIX)
-app.include_router(media_router, prefix=settings.API_V1_PREFIX)
-
-@app.get("/health", tags=["Health"])
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": settings.PROJECT_NAME,
-        "s3_endpoint": settings.S3_ENDPOINT_URL,
-    }
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)

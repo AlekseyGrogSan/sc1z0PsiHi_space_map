@@ -12,6 +12,9 @@ from app.core.database import Base, get_db
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.user import SystemRole, User
+from app.models.space import Space, SpaceMember
+from app.models.floor import Floor
+from app.models.panorama import Panorama, PanoramaHotspot, UploadSession
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
