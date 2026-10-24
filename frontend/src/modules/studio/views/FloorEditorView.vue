@@ -51,9 +51,12 @@ let wallsLayer = null
 let obstaclesLayer = null
 let corridorsLayer = null
 let poisLayer = null
+let handlesLayer = null
 let graphLayer = null
 let previewLayer = null
 let calibLayer = null
+let isDraggingShape = false
+let justDragged = false
 const mapReady = ref(false)
 
 const layoutCounts = computed(() => ({
@@ -154,6 +157,7 @@ async function initMap() {
   obstaclesLayer = L.layerGroup().addTo(map)
   wallsLayer = L.layerGroup().addTo(map)
   poisLayer = L.layerGroup().addTo(map)
+  handlesLayer = L.layerGroup().addTo(map)
   graphLayer = L.layerGroup().addTo(map)
   previewLayer = L.layerGroup().addTo(map)
   calibLayer = L.layerGroup().addTo(map)
@@ -173,10 +177,66 @@ function refreshMapLayers() {
   drawObstacles()
   drawWalls()
   drawPois()
+  drawSelectionHandles()
   drawNavGraph()
 }
 
-// 1. Draw Rooms
+// Shape dragging helper with Leaflet CRS.Simple coordinates
+function attachShapeDrag(layer, { onDrag, onDragEnd, onClick }) {
+  let startLatLng = null
+  let hasMoved = false
+
+  layer.on('mousedown', (e) => {
+    if (mode.value !== 'view') return
+    window.L.DomEvent.stopPropagation(e)
+    isDraggingShape = true
+    hasMoved = false
+    startLatLng = e.latlng
+    map.dragging.disable()
+
+    const onMouseMove = (moveEvent) => {
+      if (!isDraggingShape || !startLatLng) return
+      const currentLatLng = moveEvent.latlng
+      const dx = currentLatLng.lng - startLatLng.lng
+      const dy = currentLatLng.lat - startLatLng.lat
+      if (!hasMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        hasMoved = true
+      }
+      if (hasMoved && onDrag) {
+        onDrag(Math.round(dx), Math.round(dy))
+      }
+    }
+
+    const onMouseUp = (upEvent) => {
+      if (!isDraggingShape) return
+      isDraggingShape = false
+      map.dragging.enable()
+      map.off('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+
+      if (hasMoved) {
+        justDragged = true
+        setTimeout(() => { justDragged = false }, 120)
+        const currentLatLng = upEvent.latlng || (map ? map.mouseEventToLatLng(upEvent) : null)
+        const dx = currentLatLng ? (currentLatLng.lng - startLatLng.lng) : 0
+        const dy = currentLatLng ? (currentLatLng.lat - startLatLng.lat) : 0
+        if (onDragEnd) onDragEnd(Math.round(dx), Math.round(dy))
+      }
+    }
+
+    map.on('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  })
+
+  layer.on('click', (e) => {
+    if (mode.value !== 'view') return
+    window.L.DomEvent.stopPropagation(e)
+    if (justDragged) return
+    if (onClick) onClick(e)
+  })
+}
+
+// 1. Draw Rooms (Draggable)
 function drawRooms() {
   if (!roomsLayer || !window.L) return
   roomsLayer.clearLayers()
@@ -193,14 +253,28 @@ function drawRooms() {
       dashArray: isSel ? '4, 4' : null,
       fillColor: r.color || '#3b82f6',
       fillOpacity: isSel ? 0.35 : 0.2,
+      className: 'element-draggable',
     })
 
-    rect.on('click', (e) => {
-      if (mode.value === 'view') {
-        L.DomEvent.stopPropagation(e)
+    const origX = r.x
+    const origY = r.y
+    const origW = r.width
+    const origH = r.height
+
+    attachShapeDrag(rect, {
+      onDrag: (dx, dy) => {
+        rect.setBounds([[origY + dy, origX + dx], [origY + origH + dy, origX + origW + dx]])
+      },
+      onDragEnd: async (dx, dy) => {
+        r.x = Math.round(origX + dx)
+        r.y = Math.round(origY + dy)
+        selectedElement.value = { type: 'room', item: r }
+        await saveLayoutData(true)
+      },
+      onClick: () => {
         selectedElement.value = { type: 'room', item: r }
         refreshMapLayers()
-      }
+      },
     })
     roomsLayer.addLayer(rect)
 
@@ -216,7 +290,7 @@ function drawRooms() {
   })
 }
 
-// 2. Draw Corridors
+// 2. Draw Corridors (Draggable)
 function drawCorridors() {
   if (!corridorsLayer || !window.L) return
   corridorsLayer.clearLayers()
@@ -232,20 +306,37 @@ function drawCorridors() {
         weight: c.width || 24,
         lineCap: 'round',
         lineJoin: 'round',
+        className: 'element-draggable',
       }
     )
-    poly.on('click', (e) => {
-      if (mode.value === 'view') {
-        L.DomEvent.stopPropagation(e)
+
+    const origX1 = c.x1
+    const origY1 = c.y1
+    const origX2 = c.x2
+    const origY2 = c.y2
+
+    attachShapeDrag(poly, {
+      onDrag: (dx, dy) => {
+        poly.setLatLngs([[origY1 + dy, origX1 + dx], [origY2 + dy, origX2 + dx]])
+      },
+      onDragEnd: async (dx, dy) => {
+        c.x1 = Math.round(origX1 + dx)
+        c.y1 = Math.round(origY1 + dy)
+        c.x2 = Math.round(origX2 + dx)
+        c.y2 = Math.round(origY2 + dy)
+        selectedElement.value = { type: 'corridor', item: c }
+        await saveLayoutData(true)
+      },
+      onClick: () => {
         selectedElement.value = { type: 'corridor', item: c }
         refreshMapLayers()
-      }
+      },
     })
     corridorsLayer.addLayer(poly)
   })
 }
 
-// 3. Draw Obstacles (Circular columns and rectangular booths)
+// 3. Draw Obstacles (Circular columns and rectangular booths, Draggable)
 function drawObstacles() {
   if (!obstaclesLayer || !window.L) return
   obstaclesLayer.clearLayers()
@@ -261,13 +352,25 @@ function drawObstacles() {
         weight: isSel ? 3 : 2,
         fillColor: '#1e293b',
         fillOpacity: 0.9,
+        className: 'element-draggable',
       })
-      circle.on('click', (e) => {
-        if (mode.value === 'view') {
-          L.DomEvent.stopPropagation(e)
+      const origX = o.x
+      const origY = o.y
+
+      attachShapeDrag(circle, {
+        onDrag: (dx, dy) => {
+          circle.setLatLng([origY + dy, origX + dx])
+        },
+        onDragEnd: async (dx, dy) => {
+          o.x = Math.round(origX + dx)
+          o.y = Math.round(origY + dy)
+          selectedElement.value = { type: 'obstacle', item: o }
+          await saveLayoutData(true)
+        },
+        onClick: () => {
           selectedElement.value = { type: 'obstacle', item: o }
           refreshMapLayers()
-        }
+        },
       })
       obstaclesLayer.addLayer(circle)
 
@@ -287,20 +390,34 @@ function drawObstacles() {
         weight: isSel ? 3 : 2,
         fillColor: '#1e293b',
         fillOpacity: 0.9,
+        className: 'element-draggable',
       })
-      rect.on('click', (e) => {
-        if (mode.value === 'view') {
-          L.DomEvent.stopPropagation(e)
+      const origX = o.x
+      const origY = o.y
+      const origW = o.width
+      const origH = o.height
+
+      attachShapeDrag(rect, {
+        onDrag: (dx, dy) => {
+          rect.setBounds([[origY + dy, origX + dx], [origY + origH + dy, origX + origW + dx]])
+        },
+        onDragEnd: async (dx, dy) => {
+          o.x = Math.round(origX + dx)
+          o.y = Math.round(origY + dy)
+          selectedElement.value = { type: 'obstacle', item: o }
+          await saveLayoutData(true)
+        },
+        onClick: () => {
           selectedElement.value = { type: 'obstacle', item: o }
           refreshMapLayers()
-        }
+        },
       })
       obstaclesLayer.addLayer(rect)
     }
   })
 }
 
-// 4. Draw Walls
+// 4. Draw Walls (Draggable)
 function drawWalls() {
   if (!wallsLayer || !window.L) return
   wallsLayer.clearLayers()
@@ -315,20 +432,36 @@ function drawWalls() {
         color: isSel ? '#f43f5e' : '#cbd5e1',
         weight: isSel ? 8 : (w.thickness || 6),
         lineCap: 'square',
+        className: 'element-draggable',
       }
     )
-    wallLine.on('click', (e) => {
-      if (mode.value === 'view') {
-        L.DomEvent.stopPropagation(e)
+    const origX1 = w.x1
+    const origY1 = w.y1
+    const origX2 = w.x2
+    const origY2 = w.y2
+
+    attachShapeDrag(wallLine, {
+      onDrag: (dx, dy) => {
+        wallLine.setLatLngs([[origY1 + dy, origX1 + dx], [origY2 + dy, origX2 + dx]])
+      },
+      onDragEnd: async (dx, dy) => {
+        w.x1 = Math.round(origX1 + dx)
+        w.y1 = Math.round(origY1 + dy)
+        w.x2 = Math.round(origX2 + dx)
+        w.y2 = Math.round(origY2 + dy)
+        selectedElement.value = { type: 'wall', item: w }
+        await saveLayoutData(true)
+      },
+      onClick: () => {
         selectedElement.value = { type: 'wall', item: w }
         refreshMapLayers()
-      }
+      },
     })
     wallsLayer.addLayer(wallLine)
   })
 }
 
-// 5. Draw POIs
+// 5. Draw POIs (Draggable)
 const CATEGORY_ICONS = {
   entrance: '🚪', exit: '🚪', stand: '🏢', retail: '🛍️', entertainment: '🎮',
   stage: '🎤', food: '☕', bench: '🛋️', trash: '🗑️', wc: '🚻', wifi: '📶',
@@ -360,10 +493,16 @@ function drawPois() {
 
     marker.on('dragend', async (e) => {
       const { lat, lng } = e.target.getLatLng()
-      await poisApi.update(poi.id, { y_coord: lat, x_coord: lng })
-      poi.y_coord = lat
-      poi.x_coord = lng
+      const npx = Math.round(lng)
+      const npy = Math.round(lat)
+      poi.y_coord = npy
+      poi.x_coord = npx
+      poi.x = npx
+      poi.y = npy
+      selectedElement.value = { type: 'poi', item: poi }
+      await poisApi.update(poi.id, { y_coord: npy, x_coord: npx })
       await triggerAutoGraph(false)
+      refreshMapLayers()
     })
 
     marker.on('click', (e) => {
@@ -376,6 +515,127 @@ function drawPois() {
 
     poisLayer.addLayer(marker)
   })
+}
+
+// 6. Draw Interactive Selection Handles for Selected Element
+function createHandleIcon(color = '#3b82f6') {
+  return window.L.divIcon({
+    className: 'selection-handle-wrapper',
+    html: `<div style="width: 14px; height: 14px; border-radius: 50%; background: ${color}; border: 2px solid #ffffff; box-shadow: 0 0 8px rgba(0,0,0,0.8); cursor: crosshair;"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  })
+}
+
+function drawSelectionHandles() {
+  if (!handlesLayer || !window.L) return
+  handlesLayer.clearLayers()
+  if (!selectedElement.value || mode.value !== 'view') return
+
+  const L = window.L
+  const { type, item } = selectedElement.value
+
+  if (type === 'wall') {
+    const h1 = L.marker([item.y1, item.x1], { icon: createHandleIcon('#f43f5e'), draggable: true })
+    h1.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng()
+      item.x1 = Math.round(lng)
+      item.y1 = Math.round(lat)
+      await saveLayoutData(true)
+    })
+    handlesLayer.addLayer(h1)
+
+    const h2 = L.marker([item.y2, item.x2], { icon: createHandleIcon('#f43f5e'), draggable: true })
+    h2.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng()
+      item.x2 = Math.round(lng)
+      item.y2 = Math.round(lat)
+      await saveLayoutData(true)
+    })
+    handlesLayer.addLayer(h2)
+  } else if (type === 'corridor') {
+    const h1 = L.marker([item.y1, item.x1], { icon: createHandleIcon('#10b981'), draggable: true })
+    h1.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng()
+      item.x1 = Math.round(lng)
+      item.y1 = Math.round(lat)
+      await saveLayoutData(true)
+    })
+    handlesLayer.addLayer(h1)
+
+    const h2 = L.marker([item.y2, item.x2], { icon: createHandleIcon('#10b981'), draggable: true })
+    h2.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng()
+      item.x2 = Math.round(lng)
+      item.y2 = Math.round(lat)
+      await saveLayoutData(true)
+    })
+    handlesLayer.addLayer(h2)
+  } else if (type === 'room') {
+    const corners = [
+      { id: 'ne', lat: item.y + item.height, lng: item.x + item.width },
+      { id: 'sw', lat: item.y, lng: item.x },
+    ]
+    corners.forEach(c => {
+      const h = L.marker([c.lat, c.lng], { icon: createHandleIcon('#3b82f6'), draggable: true })
+      h.on('dragend', async (e) => {
+        const { lat, lng } = e.target.getLatLng()
+        const targetLng = Math.round(lng)
+        const targetLat = Math.round(lat)
+        if (c.id === 'ne') {
+          item.width = Math.max(20, targetLng - item.x)
+          item.height = Math.max(20, targetLat - item.y)
+        } else {
+          const oldRight = item.x + item.width
+          const oldTop = item.y + item.height
+          item.x = Math.min(targetLng, oldRight - 20)
+          item.width = oldRight - item.x
+          item.y = Math.min(targetLat, oldTop - 20)
+          item.height = oldTop - item.y
+        }
+        await saveLayoutData(true)
+      })
+      handlesLayer.addLayer(h)
+    })
+  } else if (type === 'obstacle' && item.type === 'rect') {
+    const corners = [
+      { id: 'ne', lat: item.y + item.height, lng: item.x + item.width },
+      { id: 'sw', lat: item.y, lng: item.x },
+    ]
+    corners.forEach(c => {
+      const h = L.marker([c.lat, c.lng], { icon: createHandleIcon('#f59e0b'), draggable: true })
+      h.on('dragend', async (e) => {
+        const { lat, lng } = e.target.getLatLng()
+        const targetLng = Math.round(lng)
+        const targetLat = Math.round(lat)
+        if (c.id === 'ne') {
+          item.width = Math.max(10, targetLng - item.x)
+          item.height = Math.max(10, targetLat - item.y)
+        } else {
+          const oldRight = item.x + item.width
+          const oldTop = item.y + item.height
+          item.x = Math.min(targetLng, oldRight - 10)
+          item.width = oldRight - item.x
+          item.y = Math.min(targetLat, oldTop - 10)
+          item.height = oldTop - item.y
+        }
+        await saveLayoutData(true)
+      })
+      handlesLayer.addLayer(h)
+    })
+  } else if (type === 'obstacle' && item.type === 'circle') {
+    const edgeLat = item.y
+    const edgeLng = item.x + (item.radius || 30)
+    const rh = L.marker([edgeLat, edgeLng], { icon: createHandleIcon('#06b6d4'), draggable: true })
+    rh.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng()
+      const dx = lng - item.x
+      const dy = lat - item.y
+      item.radius = Math.max(10, Math.round(Math.sqrt(dx * dx + dy * dy)))
+      await saveLayoutData(true)
+    })
+    handlesLayer.addLayer(rh)
+  }
 }
 
 // 6. Draw Auto-Generated Navigation Graph (Nodes & Edges)
@@ -459,6 +719,7 @@ async function triggerAutoGraph(showSpinner = true) {
 // Map Interaction Handlers
 function onMapClick(e) {
   if (!map) return
+  if (justDragged) return
   const { lat, lng } = e.latlng
 
   if (calibrating.value) {
@@ -859,6 +1120,60 @@ function toggleShowGraph(val) {
   drawNavGraph()
 }
 
+function nudgeSelected(dx, dy) {
+  if (!selectedElement.value) return
+  const { type, item } = selectedElement.value
+  if (type === 'room' || (type === 'obstacle' && item.type === 'rect')) {
+    item.x = Math.round(item.x + dx)
+    item.y = Math.round(item.y + dy)
+    saveLayoutData(true)
+  } else if (type === 'obstacle' && item.type === 'circle') {
+    item.x = Math.round(item.x + dx)
+    item.y = Math.round(item.y + dy)
+    saveLayoutData(true)
+  } else if (type === 'wall' || type === 'corridor') {
+    item.x1 = Math.round(item.x1 + dx)
+    item.y1 = Math.round(item.y1 + dy)
+    item.x2 = Math.round(item.x2 + dx)
+    item.y2 = Math.round(item.y2 + dy)
+    saveLayoutData(true)
+  } else if (type === 'poi') {
+    const px = Math.round(Number(item.x_coord ?? item.x ?? 0) + dx)
+    const py = Math.round(Number(item.y_coord ?? item.y ?? 0) + dy)
+    item.x_coord = px
+    item.y_coord = py
+    item.x = px
+    item.y = py
+    poisApi.update(item.id, { x_coord: px, y_coord: py }).then(() => {
+      triggerAutoGraph(false)
+      refreshMapLayers()
+    })
+  }
+}
+
+async function onDeletePlan() {
+  if (!currentFloor.value) return
+  if (!confirm('Вы уверены, что хотите удалить чертёж-подложку этого этажа?')) return
+
+  try {
+    const { data: updatedFloor } = await floorsApi.deletePlan(currentFloor.value.id)
+    if (updatedFloor) {
+      currentFloor.value.plan_url = null
+      currentFloor.value.plan_image_url = null
+      currentFloor.value.plan_original_key = null
+      currentFloor.value.plan_optimized_key = null
+      if (overlayLayer && map) {
+        map.removeLayer(overlayLayer)
+        overlayLayer = null
+      }
+      floors.value = floors.value.map(f => f.id === updatedFloor.id ? { ...f, plan_url: null, plan_image_url: null } : f)
+    }
+  } catch (err) {
+    console.error('Ошибка удаления чертежа:', err)
+    alert('Не удалось удалить чертёж этажа')
+  }
+}
+
 function handleKeyDown(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D' || e.key === 'c' || e.key === 'C')) {
     if (selectedElement.value && mode.value === 'view') {
@@ -871,6 +1186,18 @@ function handleKeyDown(e) {
       if (selectedElement.value && mode.value === 'view') {
         e.preventDefault()
         deleteSelectedElement()
+      }
+    }
+  } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    const tag = document.activeElement?.tagName?.toLowerCase()
+    if (tag !== 'input' && tag !== 'textarea') {
+      if (selectedElement.value && mode.value === 'view') {
+        e.preventDefault()
+        const step = e.shiftKey ? 40 : 10
+        if (e.key === 'ArrowLeft') nudgeSelected(-step, 0)
+        if (e.key === 'ArrowRight') nudgeSelected(step, 0)
+        if (e.key === 'ArrowUp') nudgeSelected(0, step)
+        if (e.key === 'ArrowDown') nudgeSelected(0, -step)
       }
     }
   } else if (e.key === 'Escape') {
@@ -923,6 +1250,7 @@ onBeforeUnmount(() => {
       @start-calib="startCalibration"
       @save-calib="saveCalibration"
       @cancel-calib="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null"
+      @delete-plan="onDeletePlan"
     />
 
     <!-- Map Area -->
@@ -976,6 +1304,14 @@ onBeforeUnmount(() => {
             {{ selectedElement.type === 'corridor' ? 'Коридор' : '' }}
             {{ selectedElement.type === 'poi' ? `Точка "${selectedElement.item.title}"` : '' }}
           </b>
+        </div>
+        <!-- Nudge / Move Controls -->
+        <div class="flex items-center gap-1 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/80">
+          <span class="text-[10px] text-slate-400 mr-1 select-none font-mono">Сдвиг:</span>
+          <button @click="nudgeSelected(-10, 0)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг влево (←)">←</button>
+          <button @click="nudgeSelected(0, 10)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вверх (↑)">↑</button>
+          <button @click="nudgeSelected(0, -10)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вниз (↓)">↓</button>
+          <button @click="nudgeSelected(10, 0)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вправо (→)">→</button>
         </div>
         <div class="flex items-center gap-2">
           <button @click="duplicateSelectedElement" class="btn btn-ghost text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2 py-1 gap-1" title="Дублировать (Ctrl+D)">
@@ -1175,5 +1511,20 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* Перемещение элементов мышью */
+.element-draggable,
+.leaflet-interactive.element-draggable {
+  cursor: grab !important;
+}
+.element-draggable:active,
+.leaflet-interactive.element-draggable:active {
+  cursor: grabbing !important;
+}
+
+.selection-handle-wrapper {
+  background: transparent !important;
+  border: none !important;
 }
 </style>

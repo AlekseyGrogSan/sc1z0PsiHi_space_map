@@ -41,7 +41,7 @@ const emit = defineEmits([
   'select-floor', 'floor-created', 'upload-plan', 'set-mode',
   'auto-graph', 'toggle-show-graph', 'update:blueprintOpacity',
   'clear-layout', 'start-calib', 'save-calib', 'cancel-calib',
-  'update:calibDistance',
+  'update:calibDistance', 'delete-plan',
 ])
 
 const showAddFloor = ref(false)
@@ -251,31 +251,44 @@ const BUILDER_MODES = [
 
     <!-- Blueprint underlay (Чертёж-подложка) -->
     <div class="px-4 py-3 border-b" style="border-color: var(--border)">
-      <p class="text-xs font-medium uppercase tracking-wider mb-2" style="color: var(--text-muted)">Чертёж-подложка</p>
-      <button
-        id="upload-plan-btn"
-        @click="$emit('upload-plan')"
-        :disabled="!currentFloor"
-        class="btn btn-ghost w-full justify-start text-xs gap-2.5 mb-2"
-      >
-        <Upload :size="14" />
-        {{ (currentFloor?.plan_url || currentFloor?.plan_image_url) ? 'Заменить чертёж' : 'Загрузить чертёж' }}
-      </button>
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--text-muted)">Чертёж-подложка</p>
+        <button
+          v-if="currentFloor?.plan_url || currentFloor?.plan_image_url"
+          @click="$emit('delete-plan')"
+          class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer"
+          title="Удалить загруженный чертёж этажа"
+        >
+          <Trash2 :size="12" /> Удалить
+        </button>
+      </div>
 
-      <div v-if="currentFloor?.plan_url || currentFloor?.plan_image_url" class="space-y-1.5 pt-1">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span class="flex items-center gap-1.5"><Sliders :size="12" /> Прозрачность</span>
-          <span class="font-mono text-slate-300">{{ Math.round(blueprintOpacity * 100) }}%</span>
+      <div class="space-y-2">
+        <button
+          id="upload-plan-btn"
+          @click="$emit('upload-plan')"
+          :disabled="!currentFloor"
+          class="btn btn-ghost w-full justify-start text-xs gap-2.5"
+        >
+          <Upload :size="14" />
+          {{ (currentFloor?.plan_url || currentFloor?.plan_image_url) ? 'Заменить чертёж' : 'Загрузить чертёж' }}
+        </button>
+
+        <div v-if="currentFloor?.plan_url || currentFloor?.plan_image_url" class="space-y-1.5 pt-1">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="flex items-center gap-1.5"><Sliders :size="12" /> Прозрачность</span>
+            <span class="font-mono text-slate-300">{{ Math.round(blueprintOpacity * 100) }}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            :value="blueprintOpacity"
+            @input="$emit('update:blueprintOpacity', parseFloat($event.target.value))"
+            class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+          />
         </div>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          :value="blueprintOpacity"
-          @input="$emit('update:blueprintOpacity', parseFloat($event.target.value))"
-          class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
-        />
       </div>
     </div>
 

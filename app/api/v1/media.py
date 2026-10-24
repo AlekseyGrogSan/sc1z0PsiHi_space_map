@@ -185,3 +185,36 @@ async def get_general_presigned_upload_url(
         storage_key=storage_key,
         expires_in_seconds=900,
     )
+
+
+@router.delete(
+    "/floors/{floor_id}/plan",
+    response_model=FloorRead,
+    summary="Удаление чертежа/подложки этажа",
+)
+async def delete_floor_plan(
+    floor_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    floor = await floor_repo.get_by_id(db, floor_id)
+    if not floor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Этаж не найден")
+
+    if floor.plan_optimized_key:
+        try:
+            await s3_service.delete_object(settings.S3_BUCKET_PUBLIC, floor.plan_optimized_key)
+        except Exception as e:
+            print(f"Notice: S3 delete plan_optimized_key failed: {e}")
+
+    if floor.plan_original_key and floor.plan_original_key != floor.plan_optimized_key:
+        try:
+            await s3_service.delete_object(settings.S3_BUCKET_PUBLIC, floor.plan_original_key)
+        except Exception as e:
+            print(f"Notice: S3 delete plan_original_key failed: {e}")
+
+    floor.plan_original_key = None
+    floor.plan_optimized_key = None
+    floor.plan_tiles_prefix = None
+    await db.commit()
+    await db.refresh(floor)
+    return FloorRead.model_validate(floor)

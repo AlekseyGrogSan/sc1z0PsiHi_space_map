@@ -41,6 +41,8 @@ export const floorsApi = {
     client.post(`/media/floors/${floorId}/plan/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+  deletePlan: (floorId: string | number) =>
+    client.delete(`/media/floors/${floorId}/plan`),
   saveLayout: (floorId: string | number, layout_data: any) =>
     client.patch(`/floors/${floorId}`, { layout_data }),
 }
