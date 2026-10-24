@@ -25,7 +25,7 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-// Перехватчик ответов: логирование и обработка 401 (редирект на логин)
+// Перехватчик ответов: логирование и обработка 401 (редирект на логин только для защищенных роутов)
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
@@ -36,11 +36,18 @@ apiClient.interceptors.response.use(
     console.warn(`[API Error ${status || 'TIMEOUT/NETWORK'}] ${url}: ${message}`)
     
     if (status === 401) {
-      localStorage.removeItem('access_token')
-      window.location.href = '/login'
+      // Не делаем перезагрузку/редирект, если ошибка возникла при логине/регистрации
+      const isAuthRequest = url?.includes('/auth/login') || url?.includes('/auth/register')
+      const isAuthPage = window.location.pathname === '/login' || window.location.pathname === '/register'
+      
+      if (!isAuthRequest && !isAuthPage) {
+        localStorage.removeItem('access_token')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
 )
 
+export { apiClient }
 export default apiClient
