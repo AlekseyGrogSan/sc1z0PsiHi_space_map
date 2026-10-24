@@ -15,10 +15,7 @@ async function handleLogin() {
   loading.value = true
   error.value = ''
   try {
-    const params = new URLSearchParams()
-    params.append('username', form.username)
-    params.append('password', form.password)
-    const { data } = await authApi.login(params)
+    const { data } = await authApi.login({username: form.username, password: form.password})
     localStorage.setItem('access_token', data.access_token)
     router.push('/admin/spaces')
   } catch (e) {

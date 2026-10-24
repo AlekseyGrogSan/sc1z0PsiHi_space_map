@@ -17,7 +17,7 @@ class UserCreate(UserBase):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: str = Field(..., description="Email пользователя (поле называется username для обратной совместимости)")
     password: str
 
 

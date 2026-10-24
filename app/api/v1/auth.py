@@ -1,7 +1,6 @@
 from typing import Annotated
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +19,7 @@ from app.schemas.user import (
     TokenRefreshRequest,
     TokenResponse,
     UserCreate,
+    UserLogin,
     UserProfileRead,
     UserRead,
     UserSpaceMembershipRead,
@@ -59,11 +59,11 @@ async def register(
     summary="Получение пары JWT токенов (OAuth2 Password Flow)",
 )
 async def login(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    login_in: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenResponse:
-    user = await user_repo.get_by_email(db, form_data.username)
-    if not user or not await check_password(form_data.password, user.hashed_password):
+    user = await user_repo.get_by_email(db, login_in.username)
+    if not user or not await check_password(login_in.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
