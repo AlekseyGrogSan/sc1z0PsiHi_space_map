@@ -31,8 +31,8 @@ async function createFloor() {
   addingFloor.value = true
   try {
     const { data } = await floorsApi.create(props.space.id, {
-      name: newFloorName.value,
-      level: Number(newFloorLevel.value),
+      title: newFloorName.value,
+      floor_number: Number(newFloorLevel.value),
     })
     emit('floor-created', data)
     showAddFloor.value = false
@@ -46,6 +46,7 @@ async function createFloor() {
 }
 
 const NODE_TYPE_LABELS = {
+  walkway: { label: 'Коридор', color: '#64748b' },
   corridor: { label: 'Коридор', color: '#64748b' },
   door: { label: 'Дверь', color: '#f59e0b' },
   stairs: { label: 'Лестница', color: '#8b5cf6' },
@@ -58,7 +59,7 @@ const NODE_TYPE_LABELS = {
     <!-- Space info -->
     <div class="px-4 py-3 border-b" style="border-color: var(--border)">
       <p class="text-xs font-medium mb-0.5" style="color: var(--text-muted)">Пространство</p>
-      <p class="font-semibold text-sm leading-tight" style="color: var(--text-primary)">{{ space?.name || '...' }}</p>
+      <p class="font-semibold text-sm leading-tight" style="color: var(--text-primary)">{{ space?.title || space?.name || '...' }}</p>
     </div>
 
     <!-- Floors list -->
@@ -72,8 +73,8 @@ const NODE_TYPE_LABELS = {
 
       <!-- Add floor form -->
       <div v-if="showAddFloor" class="mb-3 p-3 rounded-lg space-y-2" style="background: var(--bg-surface)">
-        <input v-model="newFloorName" type="text" class="input text-xs py-1.5" placeholder="Название этажа" />
-        <input v-model="newFloorLevel" type="number" class="input text-xs py-1.5" placeholder="Уровень (1, 2, -1...)" />
+        <input v-model="newFloorName" type="text" class="input text-xs py-1.5" placeholder="Название этажа (1 этаж)" />
+        <input v-model="newFloorLevel" type="number" class="input text-xs py-1.5" placeholder="Номер этажа (1, 2, -1...)" />
         <div class="flex gap-2">
           <button @click="createFloor" :disabled="addingFloor" class="btn btn-primary flex-1 justify-center text-xs py-1">
             <span v-if="addingFloor" class="spinner w-3 h-3"></span>
@@ -99,9 +100,11 @@ const NODE_TYPE_LABELS = {
             : 'color: var(--text-secondary); border: 1px solid transparent;'"
         >
           <Layers :size="14" />
-          <span class="flex-1 truncate">{{ floor.name }}</span>
-          <span class="text-xs font-mono px-1.5 py-0.5 rounded" style="background: var(--bg-surface); color: var(--text-muted)">{{ floor.level > 0 ? '+' : '' }}{{ floor.level }}</span>
-          <span v-if="floor.plan_image_url" class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
+          <span class="flex-1 truncate">{{ floor.title || floor.name }}</span>
+          <span class="text-xs font-mono px-1.5 py-0.5 rounded" style="background: var(--bg-surface); color: var(--text-muted)">
+            {{ (floor.floor_number ?? floor.level) > 0 ? '+' : '' }}{{ floor.floor_number ?? floor.level }}
+          </span>
+          <span v-if="floor.plan_url || floor.plan_image_url" class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
           <span v-else class="w-1.5 h-1.5 rounded-full shrink-0" style="background: var(--border)"></span>
         </button>
       </div>
@@ -117,7 +120,7 @@ const NODE_TYPE_LABELS = {
         class="btn btn-ghost w-full justify-start text-sm gap-2.5"
       >
         <Upload :size="15" />
-        {{ currentFloor?.plan_image_url ? 'Заменить план' : 'Загрузить план' }}
+        {{ (currentFloor?.plan_url || currentFloor?.plan_image_url) ? 'Заменить план' : 'Загрузить план' }}
       </button>
     </div>
 
@@ -137,7 +140,7 @@ const NODE_TYPE_LABELS = {
         <button
           id="mode-poi"
           @click="$emit('set-mode', 'poi')"
-          :disabled="!currentFloor?.plan_image_url"
+          :disabled="!(currentFloor?.plan_url || currentFloor?.plan_image_url)"
           class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all text-left disabled:opacity-40"
           :style="mode === 'poi' ? 'background: rgba(59,130,246,0.15); color: #60a5fa;' : 'color: var(--text-secondary);'"
         >
@@ -147,7 +150,7 @@ const NODE_TYPE_LABELS = {
         <button
           id="mode-nav"
           @click="$emit('set-mode', 'nav')"
-          :disabled="!currentFloor?.plan_image_url"
+          :disabled="!(currentFloor?.plan_url || currentFloor?.plan_image_url)"
           class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all text-left disabled:opacity-40"
           :style="mode === 'nav' ? 'background: rgba(139,92,246,0.15); color: #a78bfa;' : 'color: var(--text-secondary);'"
         >
@@ -177,14 +180,14 @@ const NODE_TYPE_LABELS = {
         <button
           id="start-calib-btn"
           @click="$emit('start-calib')"
-          :disabled="!currentFloor?.plan_image_url"
+          :disabled="!(currentFloor?.plan_url || currentFloor?.plan_image_url)"
           class="btn btn-ghost w-full justify-start text-sm gap-2.5 disabled:opacity-40"
         >
           <Ruler :size="15" />
           Задать масштаб
         </button>
-        <p v-if="currentFloor?.pixels_per_meter" class="text-xs mt-2" style="color: var(--text-muted)">
-          Текущий: <b style="color: var(--text-secondary)">{{ currentFloor.pixels_per_meter?.toFixed(2) }} px/м</b>
+        <p v-if="currentFloor?.ppm || currentFloor?.pixels_per_meter" class="text-xs mt-2" style="color: var(--text-muted)">
+          Текущий: <b style="color: var(--text-secondary)">{{ (currentFloor.ppm ?? currentFloor.pixels_per_meter)?.toFixed(2) }} px/м</b>
         </p>
       </div>
 

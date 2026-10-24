@@ -44,9 +44,9 @@ async function upload() {
   formData.append('file', file.value)
 
   try {
-    await floorsApi.uploadPlan(props.floorId, formData)
+    const { data: updatedFloor } = await floorsApi.uploadPlan(props.floorId, formData)
     done.value = true
-    setTimeout(() => emit('uploaded'), 800)
+    setTimeout(() => emit('uploaded', updatedFloor), 600)
   } catch (e) {
     error.value = e.response?.data?.detail || 'Ошибка загрузки'
   } finally {

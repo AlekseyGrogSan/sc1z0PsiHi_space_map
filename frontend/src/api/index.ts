@@ -15,15 +15,25 @@ export const spacesApi = {
   create: (data: any) => client.post('/spaces', data),
   get: (id: string | number) => client.get(`/spaces/${id}`),
   update: (id: string | number, data: any) => client.patch(`/spaces/${id}`, data),
-  publish: (id: string | number) => client.patch(`/spaces/${id}/publish`),
-  unpublish: (id: string | number) => client.patch(`/spaces/${id}/unpublish`),
+  publish: (id: string | number) => client.patch(`/spaces/${id}/publish`, { is_published: true }),
+  unpublish: (id: string | number) => client.patch(`/spaces/${id}/publish`, { is_published: false }),
   delete: (id: string | number) => client.delete(`/spaces/${id}`),
 }
 
 // Floors
 export const floorsApi = {
-  list: (spaceId: string | number) => client.get(`/spaces/${spaceId}/floors`),
-  create: (spaceId: string | number, data: any) => client.post(`/spaces/${spaceId}/floors`, data),
+  list: async (spaceId: string | number) => {
+    const res = await spacesApi.get(spaceId)
+    return { data: res.data?.floors || [] }
+  },
+  create: (spaceId: string | number, data: any) => {
+    const payload = {
+      title: data.title || data.name || 'Этаж',
+      floor_number: Number(data.floor_number ?? data.level ?? 1),
+      ppm: data.ppm ? Number(data.ppm) : undefined,
+    }
+    return client.post(`/spaces/${spaceId}/floors`, payload)
+  },
   get: (floorId: string | number) => client.get(`/floors/${floorId}`),
   update: (floorId: string | number, data: any) => client.patch(`/floors/${floorId}`, data),
   delete: (floorId: string | number) => client.delete(`/floors/${floorId}`),
@@ -36,18 +46,29 @@ export const floorsApi = {
 // POIs
 export const poisApi = {
   list: (floorId: string | number) => client.get(`/floors/${floorId}/pois`),
-  create: (floorId: string | number, data: any) => client.post(`/floors/${floorId}/pois`, data),
+  create: (floorId: string | number, data: any) => {
+    const payload = {
+      title: data.title || data.name,
+      category: data.category,
+      description: data.description || '',
+      x_coord: Number(data.x_coord ?? data.x),
+      y_coord: Number(data.y_coord ?? data.y),
+      panorama_id: data.panorama_id || undefined,
+      yaw_in_panorama: data.yaw_in_panorama,
+      pitch_in_panorama: data.pitch_in_panorama,
+    }
+    return client.post(`/floors/${floorId}/pois`, payload)
+  },
   update: (poiId: string | number, data: any) => client.patch(`/pois/${poiId}`, data),
   delete: (poiId: string | number) => client.delete(`/pois/${poiId}`),
 }
 
-// Navigation graph
+// Navigation graph (пакетное сохранение согласно backend navigation.py)
 export const navApi = {
-  listNodes: (floorId: string | number) => client.get(`/floors/${floorId}/nav-nodes`),
-  createNode: (floorId: string | number, data: any) => client.post(`/floors/${floorId}/nav-nodes`, data),
-  updateNode: (nodeId: string | number, data: any) => client.patch(`/nav-nodes/${nodeId}`, data),
-  deleteNode: (nodeId: string | number) => client.delete(`/nav-nodes/${nodeId}`),
-  listEdges: (floorId: string | number) => client.get(`/floors/${floorId}/nav-edges`),
-  createEdge: (data: any) => client.post('/nav-edges', data),
-  deleteEdge: (edgeId: string | number) => client.delete(`/nav-edges/${edgeId}`),
+  getGraph: (floorId: string | number) => client.get(`/floors/${floorId}/navigation/graph`),
+  saveGraph: (floorId: string | number, data: any) => client.put(`/floors/${floorId}/navigation/graph`, data),
+  listTransitions: (spaceId: string | number) => client.get(`/spaces/${spaceId}/navigation/transitions`),
+  createTransition: (spaceId: string | number, data: any) => client.post(`/spaces/${spaceId}/navigation/transitions`, data),
+  deleteTransition: (spaceId: string | number, edgeId: string | number) =>
+    client.delete(`/spaces/${spaceId}/navigation/transitions/${edgeId}`),
 }

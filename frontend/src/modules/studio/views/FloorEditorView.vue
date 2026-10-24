@@ -34,22 +34,21 @@ let calibPoints = []
 let calibLayer = null
 const mapReady = ref(false)
 const calibrating = ref(false)
+const savingGraph = ref(false)
+let syncTimer = null
 
 async function fetchData() {
   loading.value = true
   try {
-    const [spaceRes, floorsRes] = await Promise.all([
-      spacesApi.get(props.spaceId),
-      floorsApi.list(props.spaceId),
-    ])
-    space.value = spaceRes.data
-    floors.value = Array.isArray(floorsRes.data) ? floorsRes.data : (floorsRes.data.items || [])
+    const { data: spaceData } = await spacesApi.get(props.spaceId)
+    space.value = spaceData
+    floors.value = Array.isArray(spaceData?.floors) ? spaceData.floors : []
     currentFloor.value = floors.value.find(f => String(f.id) === String(props.floorId)) || floors.value[0]
     if (currentFloor.value) {
       await loadFloorData()
     }
   } catch (e) {
-    console.error(e)
+    console.error('Ошибка загрузки пространства:', e)
   } finally {
     loading.value = false
   }
@@ -58,14 +57,23 @@ async function fetchData() {
 async function loadFloorData() {
   if (!currentFloor.value) return
   const fid = currentFloor.value.id
-  const [poisRes, nodesRes, edgesRes] = await Promise.allSettled([
+  const [poisRes, graphRes] = await Promise.allSettled([
     poisApi.list(fid),
-    navApi.listNodes(fid),
-    navApi.listEdges(fid),
+    navApi.getGraph(fid),
   ])
   pois.value = poisRes.status === 'fulfilled' ? (Array.isArray(poisRes.value.data) ? poisRes.value.data : (poisRes.value.data?.items || [])) : []
-  navNodes.value = nodesRes.status === 'fulfilled' ? (Array.isArray(nodesRes.value.data) ? nodesRes.value.data : (nodesRes.value.data?.items || [])) : []
-  navEdges.value = edgesRes.status === 'fulfilled' ? (Array.isArray(edgesRes.value.data) ? edgesRes.value.data : (edgesRes.value.data?.items || [])) : []
+  
+  if (graphRes.status === 'fulfilled' && graphRes.value?.data) {
+    const g = graphRes.value.data
+    navNodes.value = (g.nodes || []).map((n, idx) => ({
+      ...n,
+      ref: n.ref || `n_${n.id || idx}`,
+    }))
+    navEdges.value = g.edges || []
+  } else {
+    navNodes.value = []
+    navEdges.value = []
+  }
   if (map) refreshMapLayers()
 }
 
@@ -77,7 +85,8 @@ async function initMap() {
   if (map) { map.remove(); map = null }
 
   const floor = currentFloor.value
-  if (!floor?.plan_image_url) {
+  const planUrl = floor?.plan_url || floor?.plan_image_url
+  if (!planUrl) {
     mapReady.value = true
     return
   }
@@ -96,7 +105,7 @@ async function initMap() {
     })
 
     const bounds = [[0, 0], [h, w]]
-    L.imageOverlay(floor.plan_image_url, bounds).addTo(map)
+    L.imageOverlay(planUrl, bounds).addTo(map)
     map.fitBounds(bounds)
 
     poiLayer = L.layerGroup().addTo(map)
@@ -109,7 +118,7 @@ async function initMap() {
     refreshMapLayers()
   }
   img.onerror = () => { mapReady.value = true }
-  img.src = floor.plan_image_url
+  img.src = planUrl
 }
 
 function refreshMapLayers() {
@@ -119,8 +128,9 @@ function refreshMapLayers() {
 }
 
 const CATEGORY_EMOJI = {
-  stand: '🏢', cafe: '☕', toilet: '🚻', wifi: '📶', stage: '🎤',
-  entrance: '🚪', exit: '🚪', elevator: '🛗', stairs: '🪜', other: '📍',
+  stand: '🏢', food: '☕', cafe: '☕', wc: '🚻', toilet: '🚻',
+  wifi: '📶', info: 'ℹ️', stage: '🎤', entrance: '🚪', exit: '🚪',
+  elevator: '🛗', stairs: '🪜', other: '📍',
 }
 
 function drawPois() {
@@ -130,12 +140,15 @@ function drawPois() {
   if (!L) return
   pois.value.forEach(poi => {
     const emoji = CATEGORY_EMOJI[poi.category] || '📍'
+    const poiTitle = poi.title || poi.name || ''
     const icon = window.L.divIcon({
       className: '',
-      html: `<div class="poi-marker" data-id="${poi.id}" title="${poi.name}">${emoji}<span>${poi.name}</span></div>`,
+      html: `<div class="poi-marker" data-id="${poi.id}" title="${poiTitle}">${emoji}<span>${poiTitle}</span></div>`,
       iconAnchor: [16, 16],
     })
-    const marker = window.L.marker([poi.y_coord, poi.x_coord], { icon, draggable: true })
+    const py = Number(poi.y_coord ?? poi.y ?? 0)
+    const px = Number(poi.x_coord ?? poi.x ?? 0)
+    const marker = window.L.marker([py, px], { icon, draggable: true })
     marker.on('dragend', async (e) => {
       const { lat, lng } = e.target.getLatLng()
       await poisApi.update(poi.id, { y_coord: lat, x_coord: lng })
@@ -153,41 +166,123 @@ function drawNavGraph() {
   edgeLayer.clearLayers()
   if (!window.L) return
 
-  // Draw edges first
+  // Draw edges
   navEdges.value.forEach(edge => {
-    const fromNode = navNodes.value.find(n => n.id === edge.from_node_id)
-    const toNode = navNodes.value.find(n => n.id === edge.to_node_id)
+    const fromNode = navNodes.value.find(n => n.id === edge.from_node_id || (edge.from_ref && n.ref === edge.from_ref))
+    const toNode = navNodes.value.find(n => n.id === edge.to_node_id || (edge.to_ref && n.ref === edge.to_ref))
     if (!fromNode || !toNode) return
+
+    const fy = Number(fromNode.y ?? fromNode.y_coord ?? 0)
+    const fx = Number(fromNode.x ?? fromNode.x_coord ?? 0)
+    const ty = Number(toNode.y ?? toNode.y_coord ?? 0)
+    const tx = Number(toNode.x ?? toNode.x_coord ?? 0)
+
     const line = window.L.polyline(
-      [[fromNode.y_coord, fromNode.x_coord], [toNode.y_coord, toNode.x_coord]],
+      [[fy, fx], [ty, tx]],
       { color: '#3b82f6', weight: 2, opacity: 0.8, dashArray: edge.is_accessible ? null : '5,5' }
     )
-    line.on('click', async () => {
+    line.on('click', () => {
       if (confirm('Удалить это ребро графа?')) {
-        await navApi.deleteEdge(edge.id)
-        await loadFloorData()
+        navEdges.value = navEdges.value.filter(e => e !== edge)
+        refreshMapLayers()
+        syncGraph()
       }
     })
     edgeLayer.addLayer(line)
   })
 
   // Draw nodes
-  const nodeTypeColor = { corridor: '#64748b', door: '#f59e0b', stairs: '#8b5cf6', elevator: '#06b6d4', default: '#3b82f6' }
+  const nodeTypeColor = {
+    walkway: '#64748b',
+    corridor: '#64748b',
+    door: '#f59e0b',
+    stairs: '#8b5cf6',
+    elevator: '#06b6d4',
+    default: '#3b82f6'
+  }
   navNodes.value.forEach(node => {
     const color = nodeTypeColor[node.node_type] || nodeTypeColor.default
     const icon = window.L.divIcon({
       className: '',
-      html: `<div class="nav-node" style="background:${color}" data-id="${node.id}" title="${node.node_type}"></div>`,
+      html: `<div class="nav-node" style="background:${color}" data-id="${node.id || node.ref}" title="${node.node_type}"></div>`,
       iconAnchor: [8, 8],
     })
-    const marker = window.L.marker([node.y_coord, node.x_coord], { icon, draggable: true })
+    const ny = Number(node.y ?? node.y_coord ?? 0)
+    const nx = Number(node.x ?? node.x_coord ?? 0)
+    const marker = window.L.marker([ny, nx], { icon, draggable: true })
     marker.on('click', () => onNavNodeClick(node))
-    marker.on('dragend', async (e) => {
+    marker.on('dragend', (e) => {
       const { lat, lng } = e.target.getLatLng()
-      await navApi.updateNode(node.id, { y_coord: lat, x_coord: lng })
+      node.y = lat
+      node.x = lng
+      node.y_coord = lat
+      node.x_coord = lng
+      refreshMapLayers()
+      syncGraph()
     })
     navLayer.addLayer(marker)
   })
+}
+
+function syncGraph() {
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(async () => {
+    if (!currentFloor.value) return
+    savingGraph.value = true
+    try {
+      const nodeInputs = navNodes.value.map((n, idx) => {
+        const refKey = n.ref || `n_${n.id || idx}`
+        n.ref = refKey
+        return {
+          ref: refKey,
+          id: n.id || undefined,
+          x: Number(n.x ?? n.x_coord),
+          y: Number(n.y ?? n.y_coord),
+          node_type: n.node_type === 'corridor' ? 'walkway' : (n.node_type || 'walkway'),
+          panorama_id: n.panorama_id || undefined,
+        }
+      })
+
+      const edgeInputs = []
+      const seen = new Set()
+      for (const e of navEdges.value) {
+        let fromRef = e.from_ref
+        let toRef = e.to_ref
+        if (!fromRef && e.from_node_id) {
+          const fn = navNodes.value.find(n => n.id === e.from_node_id)
+          fromRef = fn?.ref
+        }
+        if (!toRef && e.to_node_id) {
+          const tn = navNodes.value.find(n => n.id === e.to_node_id)
+          toRef = tn?.ref
+        }
+        if (fromRef && toRef && fromRef !== toRef) {
+          const pairKey = [fromRef, toRef].sort().join('___')
+          if (!seen.has(pairKey)) {
+            seen.add(pairKey)
+            edgeInputs.push({ from_ref: fromRef, to_ref: toRef })
+          }
+        }
+      }
+
+      const { data } = await navApi.saveGraph(currentFloor.value.id, {
+        nodes: nodeInputs,
+        edges: edgeInputs,
+      })
+      if (data?.graph) {
+        navNodes.value = (data.graph.nodes || []).map((n, idx) => ({
+          ...n,
+          ref: n.ref || `n_${n.id || idx}`,
+        }))
+        navEdges.value = data.graph.edges || []
+        refreshMapLayers()
+      }
+    } catch (err) {
+      console.error('Ошибка сохранения навигационного графа:', err)
+    } finally {
+      savingGraph.value = false
+    }
+  }, 400)
 }
 
 function onMapClick(e) {
@@ -212,7 +307,8 @@ function onNavNodeClick(node) {
     selectedNode.value = node
     return
   }
-  if (selectedNode.value.id === node.id) {
+  if ((selectedNode.value.id && selectedNode.value.id === node.id) ||
+      (selectedNode.value.ref && selectedNode.value.ref === node.ref)) {
     selectedNode.value = null
     return
   }
@@ -221,17 +317,28 @@ function onNavNodeClick(node) {
   selectedNode.value = null
 }
 
-async function createEdge(from, to) {
-  try {
-    await navApi.createEdge({
-      from_node_id: from.id,
-      to_node_id: to.id,
-      is_accessible: true,
-    })
-    await loadFloorData()
-  } catch (e) {
-    console.error(e)
-  }
+function createEdge(from, to) {
+  const fromRef = from.ref || (from.id ? `n_${from.id}` : '')
+  const toRef = to.ref || (to.id ? `n_${to.id}` : '')
+  from.ref = fromRef
+  to.ref = toRef
+
+  const exists = navEdges.value.some(e => {
+    const fMatch = (e.from_node_id === from.id && e.to_node_id === to.id) || (e.from_ref === fromRef && e.to_ref === toRef)
+    const rMatch = (e.from_node_id === to.id && e.to_node_id === from.id) || (e.from_ref === toRef && e.to_ref === fromRef)
+    return fMatch || rMatch
+  })
+  if (exists) return
+
+  navEdges.value.push({
+    from_node_id: from.id,
+    to_node_id: to.id,
+    from_ref: fromRef,
+    to_ref: toRef,
+    is_accessible: true,
+  })
+  refreshMapLayers()
+  syncGraph()
 }
 
 // Calibration
@@ -266,7 +373,8 @@ async function saveCalibration() {
   if (!calibResult.value || !calibDistance.value) return
   const ppm = calibResult.value.pixels / parseFloat(calibDistance.value)
   try {
-    await floorsApi.update(currentFloor.value.id, { pixels_per_meter: ppm })
+    currentFloor.value.ppm = ppm
+    currentFloor.value.pixels_per_meter = ppm
     calibResult.value = null
     calibDistance.value = ''
     calibLayer?.clearLayers()
@@ -281,16 +389,27 @@ async function onPoiAdded() {
   await loadFloorData()
 }
 
-async function onNodeAdded() {
+function onNodeAdded(nodeData) {
+  const tempRef = 'n_' + Date.now() + '_' + Math.floor(Math.random() * 1000)
+  navNodes.value.push({
+    ref: tempRef,
+    id: undefined,
+    x: nodeData.x,
+    y: nodeData.y,
+    node_type: nodeData.node_type || 'walkway',
+    is_accessible: nodeData.is_accessible ?? true,
+  })
   addNodeModal.value = null
-  await loadFloorData()
+  refreshMapLayers()
+  syncGraph()
 }
 
 async function onFloorSelected(floor) {
   if (floor.id === currentFloor.value?.id) return
   currentFloor.value = floor
   router.replace(`/admin/spaces/${props.spaceId}/floors/${floor.id}/editor`)
-  if (floor.plan_image_url) {
+  const planUrl = floor.plan_url || floor.plan_image_url
+  if (planUrl) {
     await nextTick()
     await initMap()
   } else {
@@ -299,11 +418,16 @@ async function onFloorSelected(floor) {
   await loadFloorData()
 }
 
-async function onPlanUploaded() {
+async function onPlanUploaded(uploadedFloor) {
   showUpload.value = false
-  const { data } = await floorsApi.get(currentFloor.value.id)
-  currentFloor.value = data
-  floors.value = floors.value.map(f => f.id === data.id ? data : f)
+  if (uploadedFloor) {
+    currentFloor.value = uploadedFloor
+    floors.value = floors.value.map(f => f.id === uploadedFloor.id ? uploadedFloor : f)
+  } else {
+    const { data: spaceData } = await spacesApi.get(props.spaceId)
+    floors.value = spaceData?.floors || []
+    currentFloor.value = floors.value.find(f => String(f.id) === String(props.floorId)) || floors.value[0]
+  }
   await nextTick()
   await initMap()
 }
@@ -319,7 +443,7 @@ onMounted(async () => {
   window.L = L
   await fetchData()
   await nextTick()
-  if (currentFloor.value?.plan_image_url) {
+  if (currentFloor.value?.plan_url || currentFloor.value?.plan_image_url) {
     await initMap()
   } else {
     loading.value = false
@@ -364,7 +488,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- No plan state -->
-      <div v-else-if="!currentFloor?.plan_image_url" class="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10">
+      <div v-else-if="!(currentFloor?.plan_url || currentFloor?.plan_image_url)" class="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10">
         <div class="w-16 h-16 rounded-2xl flex items-center justify-center" style="background: var(--bg-surface)">
           <Layers :size="32" style="color: var(--text-muted)" />
         </div>
@@ -377,6 +501,12 @@ onBeforeUnmount(() => {
 
       <!-- Leaflet map -->
       <div id="floor-map" class="w-full h-full" style="z-index:0"></div>
+
+      <!-- Saving indicator -->
+      <div v-if="savingGraph" class="absolute bottom-4 right-4 z-10 card-glass px-3 py-1.5 rounded-lg text-xs flex items-center gap-2" style="color: #60a5fa; background: rgba(15,23,42,0.85); border: 1px solid rgba(59,130,246,0.3)">
+        <span class="spinner w-3 h-3"></span>
+        <span>Синхронизация графа...</span>
+      </div>
 
       <!-- Mode indicator -->
       <div v-if="mode !== 'view'" class="absolute top-4 left-1/2 -translate-x-1/2 z-10 card-glass px-4 py-2 flex items-center gap-2 text-sm font-medium">

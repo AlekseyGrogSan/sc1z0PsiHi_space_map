@@ -10,35 +10,26 @@ const props = defineProps({
 const emit = defineEmits(['close', 'created'])
 
 const NODE_TYPES = [
-  { value: 'corridor',  label: '🛤 Коридор' },
+  { value: 'walkway',   label: '🛤 Коридор' },
   { value: 'door',      label: '🚪 Дверь' },
   { value: 'stairs',    label: '🪜 Лестница' },
   { value: 'elevator',  label: '🛗 Лифт' },
 ]
 
 const form = reactive({
-  node_type: 'corridor',
+  node_type: 'walkway',
   is_accessible: true,
 })
 const loading = ref(false)
 const error = ref('')
 
 async function handleCreate() {
-  loading.value = true
-  error.value = ''
-  try {
-    await navApi.createNode(props.floorId, {
-      node_type: form.node_type,
-      is_accessible: form.is_accessible,
-      x_coord: props.coords.x,
-      y_coord: props.coords.y,
-    })
-    emit('created')
-  } catch (e) {
-    error.value = e.response?.data?.detail || 'Ошибка'
-  } finally {
-    loading.value = false
-  }
+  emit('created', {
+    node_type: form.node_type,
+    is_accessible: form.is_accessible,
+    x: props.coords.x,
+    y: props.coords.y,
+  })
 }
 </script>
 
