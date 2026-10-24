@@ -2,6 +2,7 @@ from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.floor import Floor
 from app.models.navigation import NavEdge, NavEdgeKind, NavNode, NavNodeType
+from app.models.panorama import Panorama, PanoramaHotspot
 from app.models.poi import POI, POICategory, POIPhoto
 from app.models.space import Space, SpaceMember, SpaceRole
 from app.models.user import SystemRole, User
@@ -19,6 +20,8 @@ __all__ = [
     "POI",
     "POICategory",
     "POIPhoto",
+    "Panorama",
+    "PanoramaHotspot",
     "NavNode",
     "NavNodeType",
     "NavEdge",

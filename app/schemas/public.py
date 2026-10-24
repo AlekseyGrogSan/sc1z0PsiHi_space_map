@@ -56,6 +56,7 @@ class PublicFloorRead(BaseModel):
     height_px: Optional[int] = Field(None, exclude=True)
     ppm: Optional[float] = None
     pois: List[PublicPOIRead] = Field(default_factory=list)
+    layout_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     @computed_field
     def width(self) -> Optional[int]:

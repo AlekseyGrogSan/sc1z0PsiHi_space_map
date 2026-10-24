@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Search, X, Building2, Utensils, Bath, Mic, Sparkles } from 'lucide-vue-next'
+import { Search, X, Building2, Utensils, Bath, Mic, Sparkles, DoorOpen, Armchair, Trash2, ShoppingBag, Gamepad2, Star, Wifi } from 'lucide-vue-next'
 import type { POI, PoiCategory } from '../types'
 
 interface Props {
@@ -21,10 +21,17 @@ const isFocused = ref(false)
 
 const categories: { key: PoiCategory | 'all'; label: string; icon: any }[] = [
   { key: 'all', label: 'Все', icon: Sparkles },
+  { key: 'entrance', label: 'Входы', icon: DoorOpen },
   { key: 'stand', label: 'Стенды', icon: Building2 },
+  { key: 'retail', label: 'Магазины', icon: ShoppingBag },
+  { key: 'entertainment', label: 'Развлечения', icon: Gamepad2 },
   { key: 'food', label: 'Еда', icon: Utensils },
-  { key: 'wc', label: 'WC', icon: Bath },
+  { key: 'bench', label: 'Лавочки', icon: Armchair },
+  { key: 'trash', label: 'Урны', icon: Trash2 },
   { key: 'stage', label: 'Сцена', icon: Mic },
+  { key: 'wc', label: 'WC', icon: Bath },
+  { key: 'wifi', label: 'Wi-Fi', icon: Wifi },
+  { key: 'custom', label: 'Особые', icon: Star },
 ]
 
 const searchResults = computed(() => {

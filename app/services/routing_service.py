@@ -347,9 +347,30 @@ async def build_route(
     ctx = _build_context(floors, nodes_db, edges_db)
 
     start_floor = _floor_or_error(ctx, req.floor_id, "Стартовый этаж")
-    target_floor = _floor_or_error(ctx, poi.floor_id, "Этаж целевой POI")
     if not ctx.nodes:
-        raise RoutingError("В пространстве пока нет навигационного графа", status_code=422)
+        from app.services.auto_graph import generate_auto_graph
+        for fl in floors:
+            floor_pois = await poi_repo.list_by_floor(db, fl.id)
+            nodes_payload, edges_payload = generate_auto_graph(
+                width=fl.width_px or 2000,
+                height=fl.height_px or 1500,
+                layout=fl.layout_data or {},
+                pois=floor_pois,
+            )
+            if nodes_payload:
+                if not fl.ppm or fl.ppm <= 0:
+                    fl.ppm = 25.0
+                await navigation_repo.replace_floor_graph(
+                    db, fl, nodes_payload, edges_payload
+                )
+        await db.flush()
+        floors, nodes_db, edges_db = await navigation_repo.get_space_graph(db, space.id)
+        ctx = _build_context(floors, nodes_db, edges_db)
+
+    if not ctx.nodes:
+        raise RoutingError("В пространстве пока нет точек или элементов планировки для маршрута", status_code=422)
+
+    target_floor = _floor_or_error(ctx, poi.floor_id, "Этаж целевой POI")
 
     # --- Кандидаты на вход/выход ---
     starts, proj_a = _entry_candidates(ctx, req.x, req.y, start_floor, "точка А")

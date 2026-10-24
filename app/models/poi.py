@@ -13,13 +13,21 @@ if TYPE_CHECKING:
 
 
 class POICategory(str, enum.Enum):
-    """Категории точек интереса (фиксированный список MVP)."""
+    """Категории точек интереса."""
 
     STAND = "stand"
     WIFI = "wifi"
     WC = "wc"
     INFO = "info"
     FOOD = "food"
+    ENTRANCE = "entrance"
+    EXIT = "exit"
+    BENCH = "bench"
+    TRASH = "trash"
+    RETAIL = "retail"
+    ENTERTAINMENT = "entertainment"
+    STAGE = "stage"
+    CUSTOM = "custom"
 
 
 class POI(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -55,6 +63,7 @@ class POI(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             POICategory,
             name="poi_category_enum",
             native_enum=False,
+            length=64,
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,

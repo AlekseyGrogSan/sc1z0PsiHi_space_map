@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.navigation import NavEdgeKind, NavNodeType
 
@@ -262,3 +262,16 @@ class RouteResponse(BaseModel):
         default_factory=list,
         description="ID панорам вдоль маршрута (в порядке пути) для виртуального прохода",
     )
+
+    @computed_field
+    def points(self) -> List[RoutePointRead]:
+        pts: List[RoutePointRead] = []
+        if self.entry and self.entry.point:
+            pts.append(self.entry.point)
+        for n in self.nodes:
+            if not pts or (pts[-1].x != n.x or pts[-1].y != n.y or pts[-1].floor_id != n.floor_id):
+                pts.append(RoutePointRead(x=n.x, y=n.y, floor_id=n.floor_id))
+        if self.exit and self.exit.point:
+            if not pts or (pts[-1].x != self.exit.point.x or pts[-1].y != self.exit.point.y or pts[-1].floor_id != self.exit.point.floor_id):
+                pts.append(self.exit.point)
+        return pts

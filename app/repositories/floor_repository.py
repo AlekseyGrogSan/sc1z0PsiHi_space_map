@@ -81,6 +81,8 @@ class FloorRepository:
             floor.plan_optimized_key = floor_in.plan_optimized_key
         if floor_in.plan_tiles_prefix is not None:
             floor.plan_tiles_prefix = floor_in.plan_tiles_prefix
+        if floor_in.layout_data is not None:
+            floor.layout_data = floor_in.layout_data
         await db.flush()
         return floor
 

@@ -442,7 +442,7 @@ async def calculate_route(
 @router.patch(
     "/floors/{floor_id}",
     response_model=FloorRead,
-    summary="Редактирование параметров этажа (масштаб ppm, название)",
+    summary="Редактирование параметров этажа (масштаб ppm, название, 2D-планировка)",
 )
 async def update_floor_direct(
     floor_in: FloorUpdate,
@@ -450,4 +450,62 @@ async def update_floor_direct(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FloorRead:
     updated = await floor_repo.update(db, floor, floor_in)
+    if floor_in.layout_data is not None:
+        from app.services.auto_graph import generate_auto_graph
+        from app.repositories.poi_repository import poi_repo
+
+        floor_pois = await poi_repo.list_by_floor(db, updated.id)
+        nodes_payload, edges_payload = generate_auto_graph(
+            width=updated.width_px or 2000,
+            height=updated.height_px or 1500,
+            layout=updated.layout_data or {},
+            pois=floor_pois,
+        )
+        if nodes_payload:
+            if not updated.ppm or updated.ppm <= 0:
+                updated = await floor_repo.update(db, updated, FloorUpdate(ppm=25.0))
+            await navigation_repo.replace_floor_graph(
+                db, updated, nodes_payload, edges_payload
+            )
+
     return FloorRead.model_validate(updated)
+
+
+@router.post(
+    "/floors/{floor_id}/navigation/auto-graph",
+    response_model=NavGraphSaveResponse,
+    summary="Автоматическая генерация графа путей по 2D-планировке и POI (owner, editor)",
+)
+async def generate_floor_auto_graph(
+    floor: Annotated[Floor, Depends(require_floor_editor)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> NavGraphSaveResponse:
+    from app.services.auto_graph import generate_auto_graph
+    from app.repositories.poi_repository import poi_repo
+
+    if not floor.ppm or floor.ppm <= 0:
+        floor = await floor_repo.update(db, floor, FloorUpdate(ppm=25.0))
+
+    floor_pois = await poi_repo.list_by_floor(db, floor.id)
+    nodes_payload, edges_payload = generate_auto_graph(
+        width=floor.width_px or 2000,
+        height=floor.height_px or 1500,
+        layout=floor.layout_data or {},
+        pois=floor_pois,
+    )
+
+    saved_nodes, saved_edges, index_to_id = await navigation_repo.replace_floor_graph(
+        db, floor, nodes_payload, edges_payload
+    )
+
+    nodes = await navigation_repo.list_nodes_by_floor(db, floor.id)
+    edges = await navigation_repo.list_corridor_edges_by_floor(db, floor.id)
+    return NavGraphSaveResponse(
+        floor_id=floor.id,
+        node_id_map={n["ref"]: index_to_id[i] for i, n in enumerate(nodes_payload)},
+        graph=NavGraphRead(
+            floor_id=floor.id,
+            nodes=[NavNodeRead.model_validate(n) for n in nodes],
+            edges=[NavEdgeRead.model_validate(e) for e in edges],
+        ),
+    )

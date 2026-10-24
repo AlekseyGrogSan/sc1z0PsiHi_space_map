@@ -94,6 +94,7 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
           width: f.width ?? f.width_px ?? 2000,
           height: f.height ?? f.height_px ?? 1500,
           ppm: f.ppm ?? 25.0,
+          layout_data: f.layout_data || null,
         }))
       : mockFloors
 
@@ -145,7 +146,7 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
 
 /**
  * Построение маршрута (POST /spaces/{space_id}/navigation/route)
- * С фоллбеком на тестовую прямую линию при ошибке/отсутствии бэка.
+ * С автоматическим сглаживанием и обходом препятствий.
  */
 export async function getRoute(body: {
   origin: RoutePoint
@@ -161,14 +162,35 @@ export async function getRoute(body: {
         y: body.origin.y,
         to_poi_id: body.to_poi_id || (body.destination as any)?.id,
       }
-      const { data } = await apiClient.post<RouteResponse>(`/spaces/${body.spaceId}/navigation/route`, payload)
-      if (data && Array.isArray(data.points) && data.points.length > 0) {
-        return data
+      const { data } = await apiClient.post<any>(`/spaces/${body.spaceId}/navigation/route`, payload)
+      if (data) {
+        let points: RoutePoint[] = []
+        if (Array.isArray(data.points) && data.points.length > 0) {
+          points = data.points.map((p: any) => ({ x: Number(p.x), y: Number(p.y), floor_id: String(p.floor_id) }))
+        } else if (Array.isArray(data.nodes) && data.nodes.length > 0) {
+          points = [
+            ...(data.entry?.point ? [{ x: Number(data.entry.point.x), y: Number(data.entry.point.y), floor_id: String(data.entry.point.floor_id) }] : []),
+            ...data.nodes.map((n: any) => ({ x: Number(n.x), y: Number(n.y), floor_id: String(n.floor_id) })),
+            ...(data.exit?.point ? [{ x: Number(data.exit.point.x), y: Number(data.exit.point.y), floor_id: String(data.exit.point.floor_id) }] : []),
+          ]
+        }
+
+        if (points.length > 0) {
+          return {
+            points,
+            distance_meters: data.total_distance_meters ?? data.distance_meters ?? 0,
+            estimated_seconds: data.estimated_time_seconds ?? data.estimated_seconds ?? 0,
+            steps: Array.isArray(data.steps)
+              ? data.steps.map((s: any) => ({
+                  instruction: s.text || s.instruction || 'Следуйте по маршруту',
+                  target_floor: s.target_floor,
+                  distance_meters: s.distance_meters,
+                  kind: s.kind,
+                }))
+              : [],
+          }
+        }
       }
-    }
-    const { data } = await apiClient.post<RouteResponse>('/navigation/route', body)
-    if (data && Array.isArray(data.points) && data.points.length > 0) {
-      return data
     }
     throw new Error('Маршрут от сервера пуст или имеет некорректный формат')
   } catch (error) {

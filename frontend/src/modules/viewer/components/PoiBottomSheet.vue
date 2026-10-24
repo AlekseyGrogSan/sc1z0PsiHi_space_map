@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Navigation, Rotate3d, X, Building2, Utensils, Bath, Mic, DoorOpen, Wifi, Info } from 'lucide-vue-next'
+import { Navigation, Rotate3d, X, Building2, Utensils, Bath, Mic, DoorOpen, DoorClosed, Wifi, Info, Armchair, Trash2, ShoppingBag, Gamepad2, Star } from 'lucide-vue-next'
 import type { POI, PoiCategory } from '../types'
 
 interface Props {
@@ -17,12 +17,18 @@ const emit = defineEmits<{
 
 const categoryInfo: Record<PoiCategory, { label: string; icon: any; color: string; badgeBg: string }> = {
   stand: { label: 'Стенд', icon: Building2, color: 'text-blue-400', badgeBg: 'bg-blue-500/10 border-blue-500/30' },
+  retail: { label: 'Торговая точка', icon: ShoppingBag, color: 'text-sky-400', badgeBg: 'bg-sky-500/10 border-sky-500/30' },
+  entertainment: { label: 'Развлечения', icon: Gamepad2, color: 'text-purple-400', badgeBg: 'bg-purple-500/10 border-purple-500/30' },
   food: { label: 'Еда и Кофе', icon: Utensils, color: 'text-amber-400', badgeBg: 'bg-amber-500/10 border-amber-500/30' },
+  bench: { label: 'Лавочка', icon: Armchair, color: 'text-amber-300', badgeBg: 'bg-amber-600/10 border-amber-600/30' },
+  trash: { label: 'Урна', icon: Trash2, color: 'text-slate-400', badgeBg: 'bg-slate-500/10 border-slate-500/30' },
   wc: { label: 'Санузел', icon: Bath, color: 'text-cyan-400', badgeBg: 'bg-cyan-500/10 border-cyan-500/30' },
-  stage: { label: 'Сцена', icon: Mic, color: 'text-purple-400', badgeBg: 'bg-purple-500/10 border-purple-500/30' },
+  stage: { label: 'Сцена', icon: Mic, color: 'text-indigo-400', badgeBg: 'bg-indigo-500/10 border-indigo-500/30' },
   entrance: { label: 'Вход', icon: DoorOpen, color: 'text-emerald-400', badgeBg: 'bg-emerald-500/10 border-emerald-500/30' },
+  exit: { label: 'Выход', icon: DoorClosed, color: 'text-red-400', badgeBg: 'bg-red-500/10 border-red-500/30' },
   wifi: { label: 'Wi-Fi', icon: Wifi, color: 'text-sky-400', badgeBg: 'bg-sky-500/10 border-sky-500/30' },
   info: { label: 'Инфокиоск', icon: Info, color: 'text-slate-300', badgeBg: 'bg-slate-500/10 border-slate-500/30' },
+  custom: { label: 'Особая точка', icon: Star, color: 'text-teal-400', badgeBg: 'bg-teal-500/10 border-teal-500/30' },
 }
 </script>
 

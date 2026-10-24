@@ -1,6 +1,6 @@
 import uuid
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -36,6 +36,9 @@ class Floor(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     width_px: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     height_px: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ppm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # pixels per meter
+
+    # 2D Vector Layout (rooms, walls, corridors, obstacles)
+    layout_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)
 
     # Relationships
     space: Mapped["Space"] = relationship("Space", back_populates="floors")

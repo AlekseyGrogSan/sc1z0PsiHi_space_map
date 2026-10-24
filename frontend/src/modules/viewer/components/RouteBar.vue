@@ -18,14 +18,14 @@ const emit = defineEmits<{
 // Форматирование расстояния
 const formattedDistance = computed(() => {
   if (!props.route) return ''
-  const d = Math.round(props.route.distance_meters)
+  const d = Math.round(props.route.total_distance_meters ?? props.route.distance_meters ?? 0)
   return `${d} м`
 })
 
 // Форматирование времени пешком
 const formattedTime = computed(() => {
   if (!props.route) return ''
-  const secs = props.route.estimated_seconds
+  const secs = props.route.estimated_time_seconds ?? props.route.estimated_seconds ?? 0
   if (secs < 60) return `~${secs} сек`
   const mins = Math.ceil(secs / 60)
   return `~${mins} мин пешком`
@@ -34,16 +34,17 @@ const formattedTime = computed(() => {
 // Проверка наличия смены этажа
 const floorChangeStep = computed(() => {
   if (!props.route?.steps) return null
-  return props.route.steps.find((s) => s.target_floor !== undefined)
+  return props.route.steps.find((s) => s.target_floor !== undefined || s.kind === 'stairs' || s.kind === 'elevator')
 })
 
 // Текущая инструкция
 const primaryInstruction = computed(() => {
   if (!props.route?.steps?.length) return 'Следуйте по синей линии'
   if (floorChangeStep.value) {
-    return floorChangeStep.value.instruction || `Поднимитесь на ${floorChangeStep.value.target_floor} этаж`
+    return floorChangeStep.value.text || floorChangeStep.value.instruction || `Поднимитесь на ${floorChangeStep.value.target_floor} этаж`
   }
-  return props.route.steps[0].instruction
+  const s = props.route.steps[0]
+  return s.text || s.instruction || 'Следуйте по синей линии'
 })
 </script>
 

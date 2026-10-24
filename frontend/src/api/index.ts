@@ -41,6 +41,8 @@ export const floorsApi = {
     client.post(`/media/floors/${floorId}/plan/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+  saveLayout: (floorId: string | number, layout_data: any) =>
+    client.patch(`/floors/${floorId}`, { layout_data }),
 }
 
 // POIs
@@ -63,10 +65,11 @@ export const poisApi = {
   delete: (poiId: string | number) => client.delete(`/pois/${poiId}`),
 }
 
-// Navigation graph (пакетное сохранение согласно backend navigation.py)
+// Navigation graph
 export const navApi = {
   getGraph: (floorId: string | number) => client.get(`/floors/${floorId}/navigation/graph`),
   saveGraph: (floorId: string | number, data: any) => client.put(`/floors/${floorId}/navigation/graph`, data),
+  autoGraph: (floorId: string | number) => client.post(`/floors/${floorId}/navigation/auto-graph`),
   listTransitions: (spaceId: string | number) => client.get(`/spaces/${spaceId}/navigation/transitions`),
   createTransition: (spaceId: string | number, data: any) => client.post(`/spaces/${spaceId}/navigation/transitions`, data),
   deleteTransition: (spaceId: string | number, edgeId: string | number) =>

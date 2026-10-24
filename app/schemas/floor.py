@@ -10,6 +10,7 @@ class FloorBase(BaseModel):
     floor_number: int = Field(..., description="Номер этажа (может быть отрицательным для подвала)")
     title: str = Field(..., min_length=1, max_length=255, description="Название этажа, например '1 этаж'")
     ppm: Optional[float] = Field(None, gt=0, description="Масштаб: пикселей на 1 метр")
+    layout_data: Optional[dict] = Field(default_factory=dict, description="2D векторные элементы (комнаты, стены, препятствия)")
 
 
 class FloorCreate(FloorBase):
@@ -25,6 +26,7 @@ class FloorUpdate(BaseModel):
     plan_original_key: Optional[str] = None
     plan_optimized_key: Optional[str] = None
     plan_tiles_prefix: Optional[str] = None
+    layout_data: Optional[dict] = None
 
 
 class FloorRead(FloorBase):
@@ -37,6 +39,7 @@ class FloorRead(FloorBase):
     plan_tiles_prefix: Optional[str] = None
     width_px: Optional[int] = None
     height_px: Optional[int] = None
+    layout_data: Optional[dict] = Field(default_factory=dict)
     created_at: datetime
 
     @computed_field

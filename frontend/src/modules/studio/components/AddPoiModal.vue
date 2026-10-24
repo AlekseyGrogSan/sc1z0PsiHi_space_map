@@ -10,11 +10,19 @@ const props = defineProps({
 const emit = defineEmits(['close', 'created'])
 
 const CATEGORIES = [
-  { value: 'stand', label: '🏢 Стенд' },
-  { value: 'food',  label: '☕ Кафе / Еда' },
-  { value: 'wc',    label: '🚻 Туалет' },
-  { value: 'wifi',  label: '📶 Wi-Fi' },
-  { value: 'info',  label: 'ℹ️ Инфо / Стойка' },
+  { value: 'entrance',      label: '🚪 Вход' },
+  { value: 'exit',          label: '🚪 Выход' },
+  { value: 'stand',         label: '🏢 Стенд' },
+  { value: 'retail',        label: '🛍️ Торговая точка' },
+  { value: 'entertainment', label: '🎮 Развлечения' },
+  { value: 'stage',         label: '🎤 Сцена' },
+  { value: 'food',          label: '☕ Кафе / Еда' },
+  { value: 'bench',         label: '🛋️ Лавочка' },
+  { value: 'trash',         label: '🗑️ Урна' },
+  { value: 'wc',            label: '🚻 Туалет' },
+  { value: 'wifi',          label: '📶 Wi-Fi' },
+  { value: 'info',          label: 'ℹ️ Инфо-стойка' },
+  { value: 'custom',        label: '⭐ Кастомная точка' },
 ]
 
 const form = reactive({
