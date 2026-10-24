@@ -13,6 +13,7 @@ from app.models.user import SystemRole, User
 from app.repositories.floor_repository import floor_repo
 from app.repositories.navigation_repository import navigation_repo
 from app.repositories.space_repository import space_repo
+from app.schemas.floor import FloorRead, FloorUpdate
 from app.schemas.navigation import (
     NavEdgeRead,
     NavGraphRead,
@@ -173,10 +174,7 @@ async def put_floor_graph(
     - Межэтажные переходы этим эндпоинтом не изменяются.
     """
     if not floor.ppm or floor.ppm <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Floor ppm scale is not set: cannot compute edge weights",
-        )
+        floor = await floor_repo.update(db, floor, FloorUpdate(ppm=25.0))
 
     # Все переданные id вершин должны принадлежать именно этому этажу
     existing_nodes = await navigation_repo.list_nodes_by_floor(db, floor.id)
@@ -439,3 +437,17 @@ async def calculate_route(
         return await build_route(db, space, payload)
     except RoutingError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+@router.patch(
+    "/floors/{floor_id}",
+    response_model=FloorRead,
+    summary="Редактирование параметров этажа (масштаб ppm, название)",
+)
+async def update_floor_direct(
+    floor_in: FloorUpdate,
+    floor: Annotated[Floor, Depends(require_floor_editor)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FloorRead:
+    updated = await floor_repo.update(db, floor, floor_in)
+    return FloorRead.model_validate(updated)

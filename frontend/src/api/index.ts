@@ -30,7 +30,7 @@ export const floorsApi = {
     const payload = {
       title: data.title || data.name || 'Этаж',
       floor_number: Number(data.floor_number ?? data.level ?? 1),
-      ppm: data.ppm ? Number(data.ppm) : undefined,
+      ppm: data.ppm ? Number(data.ppm) : 25.0,
     }
     return client.post(`/spaces/${spaceId}/floors`, payload)
   },

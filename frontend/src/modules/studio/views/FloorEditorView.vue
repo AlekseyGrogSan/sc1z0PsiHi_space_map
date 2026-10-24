@@ -373,6 +373,7 @@ async function saveCalibration() {
   if (!calibResult.value || !calibDistance.value) return
   const ppm = calibResult.value.pixels / parseFloat(calibDistance.value)
   try {
+    await floorsApi.update(currentFloor.value.id, { ppm })
     currentFloor.value.ppm = ppm
     currentFloor.value.pixels_per_meter = ppm
     calibResult.value = null
@@ -380,7 +381,7 @@ async function saveCalibration() {
     calibLayer?.clearLayers()
     alert(`Масштаб сохранён: ${ppm.toFixed(2)} px/м`)
   } catch (e) {
-    console.error(e)
+    console.error('Ошибка сохранения масштаба:', e)
   }
 }
 
