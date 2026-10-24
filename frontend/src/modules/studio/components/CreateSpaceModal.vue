@@ -19,7 +19,7 @@ async function handleCreate() {
   loading.value = true
   error.value = ''
   try {
-    await spacesApi.create({ name: form.name, slug: form.slug, description: form.description })
+    await spacesApi.create({ title: form.name, slug: form.slug, description: form.description })
     emit('created')
   } catch (e) {
     error.value = e.response?.data?.detail || 'Ошибка создания'
