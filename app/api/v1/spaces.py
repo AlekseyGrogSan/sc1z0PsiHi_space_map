@@ -148,6 +148,24 @@ async def set_space_publish_status(
     return await space_repo.set_publish_status(db, space, publish_in.is_published)
 
 
+@router.delete(
+    "/{space_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удаление пространства (owner, superadmin)",
+)
+async def delete_space(
+    space_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    context: Annotated[
+        tuple[Space, Optional[SpaceMember]],
+        Depends(require_space_role([SpaceRole.OWNER])),
+    ],
+) -> None:
+    space, _ = context
+    await space_repo.delete(db, space)
+    await db.commit()
+
+
 @router.post(
     "/{space_id}/members",
     response_model=SpaceMemberRead,

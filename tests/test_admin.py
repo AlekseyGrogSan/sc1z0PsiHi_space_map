@@ -42,7 +42,7 @@ async def test_admin_toggle_user_status(
     # Attempt login with deactivated user
     login_resp = await client.post(
         "/api/v1/auth/login",
-        data={"username": organizer_user.email, "password": "Password123!"},
+        json={"username": organizer_user.email, "password": "Password123!"},
     )
     assert login_resp.status_code == 403
     assert "deactivated" in login_resp.json()["detail"]

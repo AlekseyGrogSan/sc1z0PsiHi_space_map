@@ -169,3 +169,27 @@ async def test_list_spaces_and_get_space_permissions(client: AsyncClient, auth_h
     anon_pub_resp = await client.get(f"/api/v1/spaces/{space_id}")
     assert anon_pub_resp.status_code == 200
     assert anon_pub_resp.json()["id"] == space_id
+
+
+@pytest.mark.asyncio
+async def test_delete_space(client: AsyncClient, organizer_user, auth_headers):
+    # 1. Create space
+    resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Временный павильон", "slug": "temp-pavilion"},
+    )
+    assert resp.status_code == 201
+    space_id = resp.json()["id"]
+
+    # 2. Try to delete without auth -> 401
+    unauth_resp = await client.delete(f"/api/v1/spaces/{space_id}")
+    assert unauth_resp.status_code == 401
+
+    # 3. Delete as owner -> 204
+    del_resp = await client.delete(f"/api/v1/spaces/{space_id}", headers=auth_headers)
+    assert del_resp.status_code == 204
+
+    # 4. Check that space no longer exists -> 404
+    get_resp = await client.get(f"/api/v1/spaces/{space_id}", headers=auth_headers)
+    assert get_resp.status_code == 404

@@ -198,5 +198,13 @@ class SpaceRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def delete(
+        self,
+        db: AsyncSession,
+        space: Space,
+    ) -> None:
+        await db.delete(space)
+        await db.flush()
+
 
 space_repo = SpaceRepository()

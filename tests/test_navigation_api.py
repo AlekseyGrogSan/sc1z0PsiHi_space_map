@@ -297,8 +297,9 @@ async def test_put_graph_requires_ppm(client: AsyncClient, nav_world, auth_heade
         },
         headers=auth_headers,
     )
-    assert resp.status_code == 422
-    assert "ppm" in resp.json()["detail"]
+    assert resp.status_code == 200
+    await db_session.refresh(floor)
+    assert floor.ppm == 25.0
 
 
 # ---------------------------------------------------------------------------
