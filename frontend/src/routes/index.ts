@@ -20,6 +20,16 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    path: '/tour360',
+    name: 'PanoramaViewer',
+    component: () => import('../modules/tour360/PanoramaViewer.vue'),
+  },
+  {
+    path: '/camera-assistant',
+    name: 'CameraAssistant',
+    component: () => import('../modules/tour360/CameraAssistant.vue'),
+  },
+  {
     path: '/admin',
     component: () => import('../modules/studio/layouts/AdminLayout.vue'),
     meta: { requiresAuth: true },
