@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: indoor_nav_postgres
     restart: unless-stopped
     environment:
@@ -13,8 +13,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d indoor_nav_db"]
-      interval: 5s
-      timeout: 5s
+      interval: 3s
+      timeout: 3s
       retries: 5
 
   redis:
@@ -27,12 +27,12 @@ services:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 3s
       timeout: 3s
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: elestio/minio:latest
     container_name: indoor_nav_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -44,27 +44,6 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: indoor_nav_minio_init
-    depends_on:
-      minio:
-        condition: service_started
-    entrypoint: >
-      /bin/sh -c "
-      sleep 2;
-      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb --ignore-existing local/spaces-public;
-      /usr/bin/mc mb --ignore-existing local/spaces-staging;
-      /usr/bin/mc anonymous set download local/spaces-public;
-      exit 0;
-      "
 
   api:
     build:
