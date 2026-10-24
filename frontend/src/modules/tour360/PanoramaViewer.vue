@@ -1,70 +1,36 @@
 <template>
-  <div class="relative w-full h-screen bg-slate-950 text-white flex flex-col">
-
-    <div id="panorama" class="w-full h-full"></div>
-
-
-    <div class="absolute bottom-6 right-6 flex gap-4">
-      <button
-        @click="toggleGyroscope"
-        class="p-3 bg-slate-900 rounded-full shadow-lg hover:bg-slate-800 transition text-[#3b82f6]"
-      >
-        <CompassIcon class="w-6 h-6" />
-      </button>
-    </div>
-
-    <div class="absolute top-4 left-4 bg-slate-900/80 p-3 rounded-xl backdrop-blur-sm">
-      <h2 class="text-lg font-bold">Выставка: Холл</h2>
-    </div>
-  </div>
+  <PanoramaViewer
+    :panorama-url="props.panoramaUrl"
+    :image-path="props.imagePath"
+    :poi="props.poi"
+    :hot-spots="props.hotSpots"
+    :title="props.title"
+    :compass="true"
+    @hotspot-click="(hs) => emit('hotspotClick', hs)"
+  />
 </template>
 
-<script setup>
-import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { Compass as CompassIcon } from 'lucide-vue-next'
+<script setup lang="ts">
+import PanoramaViewer, { type HotSpotItem } from '../viewer/components/PanoramaViewer.vue'
+import type { POI } from '../viewer/types'
 
-const viewer = ref(null)
-
-onMounted(() => {
-  viewer.value = window.pannellum.viewer('panorama', {
-    type: 'cubemap',
-    cubemap: [
-      '/cubemap/l1/f_0_0.webp',
-      '/cubemap/l1/r_0_0.webp',
-      '/cubemap/l1/b_0_0.webp',
-      '/cubemap/l1/l_0_0.webp',
-      '/cubemap/l1/u_0_0.webp',
-      '/cubemap/l1/d_0_0.webp'
-    ],
-    autoLoad: true,
-    compass: true,
-    hotSpots: [
-      {
-        pitch: 14.1,
-        yaw: 1.5,
-        type: "info",
-        text: "Стенд ТТК", // Information points
-        URL: "#"
-      },
-      {
-        pitch: -9.4,
-        yaw: 222.6,
-        type: "scene",
-        text: "Переход в коридор",
-        sceneId: "scene2"
-      }
-    ]
-  })
-})
-
-const toggleGyroscope = () => {
-  //gyroscope
-  if (viewer.value) {
-    viewer.value.toggleOrientation()
-  }
+interface Props {
+  panoramaUrl?: string | null
+  imagePath?: string | null
+  poi?: POI | null
+  hotSpots?: HotSpotItem[]
+  title?: string
 }
 
-onBeforeUnmount(() => {
-  if (viewer.value) viewer.value.destroy()
+const props = withDefaults(defineProps<Props>(), {
+  panoramaUrl: '/hall_360_panorama.jpg',
+  imagePath: null,
+  poi: null,
+  hotSpots: () => [],
+  title: 'Выставка: Холл ТТК 360°',
 })
+
+const emit = defineEmits<{
+  (e: 'hotspotClick', hotspot: HotSpotItem): void
+}>()
 </script>

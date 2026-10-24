@@ -1,134 +1,223 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { X, Rotate3d, Compass, Eye } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { X, Rotate3d, Maximize2, Minimize2, MapPin } from 'lucide-vue-next'
 import type { POI } from '../types'
+import PanoramaViewer, { type HotSpotItem } from './PanoramaViewer.vue'
 
 interface Props {
-  poi: POI | null
+  poi?: POI | null
+  panoramaUrl?: string | null
+  imagePath?: string | null
+  hotSpots?: HotSpotItem[]
+  allPois?: POI[]
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  poi: null,
+  panoramaUrl: null,
+  imagePath: null,
+  hotSpots: () => [],
+  allPois: () => [],
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'selectHotspot', hotspot: HotSpotItem): void
+  (e: 'selectPoi', poi: POI): void
 }>()
 
-const isDragging = ref(false)
-const panX = ref(0)
-const startX = ref(0)
+// Вычисляем хотспоты перехода: либо переданные извне, либо контекстные для демо
+const effectiveHotSpots = computed<HotSpotItem[]>(() => {
+  if (props.hotSpots && props.hotSpots.length > 0) {
+    return props.hotSpots
+  }
 
-function onMouseDown(e: MouseEvent) {
-  isDragging.value = true
-  startX.value = e.clientX - panX.value
-}
+  // Если открыт конкретный стенд в демо, создаем навигационные переходы между залами
+  const pId = props.poi?.panorama_id
+  if (pId === 'pano-stand-ttk') {
+    return [
+      {
+        id: 'hs-to-ai',
+        pitch: -2,
+        yaw: 55,
+        type: 'scene',
+        title: 'Стенд AI & Robotics',
+        text: 'Переход: Стенд AI & Robotics',
+        target_panorama_id: 'poi-stand-ai',
+      },
+      {
+        id: 'hs-to-stage',
+        pitch: 1,
+        yaw: -70,
+        type: 'scene',
+        title: 'Главная сцена',
+        text: 'Переход: Главная сцена (Main Stage)',
+        target_panorama_id: 'poi-main-stage',
+      },
+      {
+        id: 'hs-to-entrance',
+        pitch: -5,
+        yaw: 175,
+        type: 'scene',
+        title: 'Вход на выставку',
+        text: 'Переход: Центральный вход',
+        target_panorama_id: 'poi-entrance',
+      },
+    ]
+  }
 
-function onMouseMove(e: MouseEvent) {
-  if (!isDragging.value) return
-  panX.value = e.clientX - startX.value
-}
+  if (pId === 'pano-stand-ai') {
+    return [
+      {
+        id: 'hs-to-ttk',
+        pitch: -2,
+        yaw: -125,
+        type: 'scene',
+        title: 'Главный стенд ТТК',
+        text: 'Переход: Главный стенд ТТК',
+        target_panorama_id: 'poi-stand-ttk',
+      },
+      {
+        id: 'hs-to-stage',
+        pitch: 0,
+        yaw: 80,
+        type: 'scene',
+        title: 'Главная сцена',
+        text: 'Переход: Главная сцена',
+        target_panorama_id: 'poi-main-stage',
+      },
+    ]
+  }
 
-function onMouseUp() {
-  isDragging.value = false
-}
+  if (pId === 'pano-main-stage') {
+    return [
+      {
+        id: 'hs-to-ttk',
+        pitch: -1,
+        yaw: 110,
+        type: 'scene',
+        title: 'Главный стенд ТТК',
+        text: 'Переход: Главный стенд ТТК',
+        target_panorama_id: 'poi-stand-ttk',
+      },
+      {
+        id: 'hs-to-conf',
+        pitch: 0,
+        yaw: -85,
+        type: 'scene',
+        title: 'Зал Восток',
+        text: 'Переход: Конференц-зал Восток',
+        target_panorama_id: 'poi-conf-vostok',
+      },
+    ]
+  }
 
-function onTouchStart(e: TouchEvent) {
-  if (!e.touches[0]) return
-  isDragging.value = true
-  startX.value = e.touches[0].clientX - panX.value
-}
+  if (pId === 'pano-entrance') {
+    return [
+      {
+        id: 'hs-to-ttk',
+        pitch: -1,
+        yaw: 10,
+        type: 'scene',
+        title: 'Главный стенд ТТК',
+        text: 'Переход: Главный стенд ТТК',
+        target_panorama_id: 'poi-stand-ttk',
+      },
+    ]
+  }
 
-function onTouchMove(e: TouchEvent) {
-  if (!isDragging.value || !e.touches[0]) return
-  panX.value = e.touches[0].clientX - startX.value
-}
+  return []
+})
 
-function onTouchEnd() {
-  isDragging.value = false
+// Обработка перехода по хотспоту
+function handleHotspotClick(hotspot: HotSpotItem) {
+  emit('selectHotspot', hotspot)
+
+  const targetId = hotspot.target_panorama_id || hotspot.sceneId
+  if (targetId && props.allPois.length > 0) {
+    const nextPoi = props.allPois.find(
+      (p) => p.id === targetId || p.panorama_id === targetId
+    )
+    if (nextPoi) {
+      emit('selectPoi', nextPoi)
+    }
+  }
 }
 </script>
 
 <template>
   <div
-    v-if="poi"
-    class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto"
+    class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 pointer-events-auto"
     @click.self="emit('close')"
   >
     <div
-      class="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+      class="relative w-full max-w-5xl h-[88vh] sm:h-[82vh] min-h-[500px] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
     >
       <!-- Шапка модалки -->
-      <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/70">
-        <div class="flex items-center gap-2.5">
-          <div class="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/80 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="p-2.5 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-md">
             <Rotate3d class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-base font-bold text-white">{{ poi.title }}</h3>
-            <p class="text-xs text-slate-400">Виртуальный 360° тур (Pannellum Ready)</p>
+            <h3 class="text-base font-bold text-white leading-tight">
+              {{ poi ? poi.title : '360° Виртуальный тур' }}
+            </h3>
+            <p class="text-xs text-slate-400">
+              Pannellum WebGL 3D-сфера • 360° круговой обзор
+            </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          class="p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-          @click="emit('close')"
-        >
-          <X class="w-5 h-5" />
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            title="Закрыть тур"
+            class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            @click="emit('close')"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
-      <!-- Область 360 панорамы (интерактивный drag-to-look) -->
-      <div
-        class="relative w-full h-80 sm:h-96 bg-slate-950 overflow-hidden cursor-grab active:cursor-grabbing select-none"
-        @mousedown="onMouseDown"
-        @mousemove="onMouseMove"
-        @mouseup="onMouseUp"
-        @mouseleave="onMouseUp"
-        @touchstart="onTouchStart"
-        @touchmove="onTouchMove"
-        @touchend="onTouchEnd"
-      >
-        <!-- Имитация 360 панорамы холла с плавной прокруткой фона -->
-        <div
-          class="absolute inset-0 w-[300%] h-full bg-cover bg-center transition-transform duration-75"
-          :style="{
-            backgroundImage: `url('https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=2000&q=80')`,
-            transform: `translateX(${panX % 1000}px)`,
-          }"
-        ></div>
+      <!-- Область 360 панорамы (Pannellum WebGL 3D Сфера) -->
+      <div class="relative w-full flex-1 min-h-[360px] bg-slate-950 overflow-hidden">
+        <PanoramaViewer
+          :panorama-url="props.panoramaUrl"
+          :image-path="props.imagePath"
+          :poi="props.poi"
+          :hot-spots="effectiveHotSpots"
+          :title="props.poi?.title"
+          :auto-load="true"
+          :compass="true"
+          @hotspot-click="handleHotspotClick"
+          @request-poi-selection="emit('close')"
+        />
+      </div>
 
-        <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30 pointer-events-none"></div>
-
-        <!-- Центральный хотспот / маркер -->
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div class="flex flex-col items-center gap-2 animate-bounce">
-            <div class="w-10 h-10 rounded-full bg-blue-600 border-2 border-white flex items-center justify-center shadow-lg shadow-blue-500/50">
-              <Compass class="w-5 h-5 text-white animate-spin-slow" />
-            </div>
-            <span class="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-xs font-semibold text-white border border-white/20">
-              {{ poi.title }}
+      <!-- Подвал модалки: описание локации и быстрый возврат к 2D-карте -->
+      <div class="px-5 py-3.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
+        <div class="min-w-0">
+          <p v-if="poi?.description" class="text-xs text-slate-300 line-clamp-1">
+            {{ poi.description }}
+          </p>
+          <p v-else class="text-xs text-slate-400">
+            Перетаскивайте изображение мышкой или пальцем для свободного обзора на 360 градусов.
+          </p>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-[11px] text-slate-500">
+              ID панорамы: {{ poi?.panorama_id || props.panoramaUrl || 'не выбрано' }}
+            </span>
+            <span v-if="effectiveHotSpots.length > 0" class="text-[11px] text-blue-400 font-medium">
+              • Доступно переходов (хотспотов): {{ effectiveHotSpots.length }}
             </span>
           </div>
         </div>
 
-        <!-- Подсказка управления -->
-        <div class="absolute bottom-3 left-3 right-3 flex items-center justify-between text-xs text-slate-300 pointer-events-none bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
-          <span class="flex items-center gap-1.5">
-            <Eye class="w-3.5 h-3.5 text-blue-400" />
-            Перетаскивайте пальцем или мышкой для обзора 360°
-          </span>
-          <span class="text-slate-400">ID: {{ poi.panorama_id || 'pano-default' }}</span>
-        </div>
-      </div>
-
-      <!-- Описание локации внизу -->
-      <div class="p-4 bg-slate-900 flex items-center justify-between gap-4">
-        <p class="text-xs text-slate-300 line-clamp-2">
-          {{ poi.description }}
-        </p>
         <button
           type="button"
-          class="shrink-0 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition-colors"
+          class="shrink-0 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/25 transition-all cursor-pointer"
           @click="emit('close')"
         >
           Вернуться к карте
@@ -139,15 +228,5 @@ function onTouchEnd() {
 </template>
 
 <style scoped>
-@keyframes spinSlow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-.animate-spin-slow {
-  animation: spinSlow 12s linear infinite;
-}
+/* Дополнительные стили модального окна */
 </style>

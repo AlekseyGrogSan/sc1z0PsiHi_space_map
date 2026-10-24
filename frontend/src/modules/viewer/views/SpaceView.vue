@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loader2, AlertCircle } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Layers, Rotate3d } from 'lucide-vue-next'
 import { getSpaceBySlug, getRoute } from '../api'
 import type { Space, Floor, POI, PoiCategory, RouteResponse, RoutePoint } from '../types'
 import ViewerMap from '../components/ViewerMap.vue'
@@ -94,6 +94,9 @@ function handleSelectFloor(floor: Floor) {
 // Выбор POI из карты или поиска
 function handleSelectPoi(poi: POI) {
   selectedPoi.value = poi
+  if (isPanoramaOpen.value) {
+    panoramaPoi.value = poi
+  }
 
   // Если точка на другом этаже — автоматически переключаем этаж
   if (activeFloor.value && poi.floor_id !== activeFloor.value.id) {
@@ -156,6 +159,9 @@ function handleOpenVirtualTour() {
   const targetPoi = selectedPoi.value || space.value?.pois.find((p) => p.panorama_id)
   if (targetPoi) {
     handleOpenPanorama(targetPoi)
+  } else {
+    panoramaPoi.value = null
+    isPanoramaOpen.value = true
   }
 }
 
@@ -237,6 +243,17 @@ watch(
           :active-floor-id="activeFloor.id"
           @select-floor="handleSelectFloor"
         />
+
+        <!-- Кнопка вызова 360° тура -->
+        <button
+          type="button"
+          class="pointer-events-auto mt-2 p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/60 shadow-xl text-purple-400 hover:text-purple-300 transition-all flex items-center gap-2 group cursor-pointer backdrop-blur-md"
+          title="Открыть 360° виртуальный тур"
+          @click="handleOpenVirtualTour"
+        >
+          <Rotate3d class="w-5 h-5 group-hover:rotate-45 transition-transform" />
+          <span class="text-xs font-semibold text-white hidden sm:inline">360° Тур</span>
+        </button>
       </div>
 
       <!-- НИЖНИЙ ОВЕРЛЕЙ: Bottom Sheet карточки POI или Плашка маршрута -->
@@ -263,8 +280,10 @@ watch(
 
       <!-- Модальное окно 360° виртуального тура -->
       <PanoramaModal
-        v-if="isPanoramaOpen && panoramaPoi"
+        v-if="isPanoramaOpen"
         :poi="panoramaPoi"
+        :all-pois="space.pois"
+        @select-poi="handleSelectPoi"
         @close="handleClosePanorama"
       />
     </template>
