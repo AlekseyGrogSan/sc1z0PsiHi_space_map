@@ -48,27 +48,27 @@ const categoryInfo: Record<PoiCategory, { label: string; icon: any; color: strin
   >
     <div
       v-if="poi"
-      class="w-full max-w-lg mx-auto bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl p-5 shadow-2xl shadow-black/70 pointer-events-auto flex flex-col gap-4 text-slate-100"
+      class="w-full max-w-lg mx-auto bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl p-3.5 sm:p-5 shadow-2xl shadow-black/70 pointer-events-auto flex flex-col gap-3 sm:gap-4 text-slate-100 max-h-[85dvh] overflow-y-auto overscroll-contain"
     >
       <!-- Верхняя строка карточки: Категория, Этаж, Кнопка закрытия -->
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <span
-            class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border"
+            class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold border"
             :class="[categoryInfo[poi.category]?.badgeBg || 'bg-slate-800 border-slate-700', categoryInfo[poi.category]?.color || 'text-slate-200']"
           >
-            <component :is="categoryInfo[poi.category]?.icon || Building2" class="w-3.5 h-3.5" />
-            <span>{{ categoryInfo[poi.category]?.label || poi.category }}</span>
+            <component :is="categoryInfo[poi.category]?.icon || Building2" class="w-3.5 h-3.5 shrink-0" />
+            <span class="truncate">{{ categoryInfo[poi.category]?.label || poi.category }}</span>
           </span>
 
-          <span v-if="floorTitle" class="text-xs text-slate-400 font-medium">
+          <span v-if="floorTitle" class="text-[11px] sm:text-xs text-slate-400 font-medium truncate">
             • {{ floorTitle }}
           </span>
         </div>
 
         <button
           type="button"
-          class="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+          class="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors shrink-0"
           title="Закрыть карточку"
           @click="emit('close')"
         >
@@ -77,55 +77,55 @@ const categoryInfo: Record<PoiCategory, { label: string; icon: any; color: strin
       </div>
 
       <!-- Основной контент: Название, Описание и Логотип -->
-      <div class="flex items-start gap-4">
+      <div class="flex items-start gap-3 sm:gap-4">
         <!-- Логотип, если есть -->
         <div
           v-if="poi.logo_url"
-          class="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center p-1"
+          class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center p-1"
         >
           <img :src="poi.logo_url" :alt="poi.title" class="w-full h-full object-cover rounded-xl" />
         </div>
 
         <div class="flex-1 min-w-0">
-          <h2 class="text-lg font-bold text-white tracking-tight leading-snug">
+          <h2 class="text-base sm:text-lg font-bold text-white tracking-tight leading-snug line-clamp-2">
             {{ poi.title }}
           </h2>
-          <p class="text-sm text-slate-300 mt-1 line-clamp-3 leading-relaxed">
+          <p class="text-xs sm:text-sm text-slate-300 mt-1 line-clamp-3 leading-relaxed">
             {{ poi.description || 'Описание отсутствует.' }}
           </p>
         </div>
       </div>
 
-      <!-- Кнопки действий -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+      <!-- Кнопки действий: компактная адаптивная сетка из 3 колонок -->
+      <div class="grid grid-cols-3 gap-1.5 sm:gap-2 pt-1">
         <!-- Построить маршрут сюда -->
         <button
           type="button"
-          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-semibold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
+          class="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-semibold text-[11px] sm:text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer text-center leading-tight"
           @click="emit('buildRoute', poi)"
         >
-          <Navigation class="w-3.5 h-3.5 fill-white" />
-          <span>Маршрут сюда</span>
+          <Navigation class="w-3.5 h-3.5 fill-white shrink-0" />
+          <span class="truncate">Маршрут</span>
         </button>
 
         <!-- Начать отсюда -->
         <button
           type="button"
-          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+          class="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-semibold text-[11px] sm:text-xs shadow-lg shadow-emerald-600/30 transition-all cursor-pointer text-center leading-tight"
           @click="emit('setAsOrigin', poi)"
         >
-          <MapPin class="w-3.5 h-3.5" />
-          <span>Начать отсюда</span>
+          <MapPin class="w-3.5 h-3.5 shrink-0" />
+          <span class="truncate">Старт</span>
         </button>
 
         <!-- Осмотреться в 360 -->
         <button
           type="button"
-          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 border border-slate-700 font-semibold text-xs transition-all cursor-pointer"
+          class="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 border border-slate-700 font-semibold text-[11px] sm:text-xs transition-all cursor-pointer text-center leading-tight"
           @click="emit('openPanorama', poi)"
         >
-          <Rotate3d class="w-3.5 h-3.5 text-purple-400" />
-          <span>Тур 360°</span>
+          <Rotate3d class="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          <span class="truncate">Тур 360°</span>
         </button>
       </div>
     </div>

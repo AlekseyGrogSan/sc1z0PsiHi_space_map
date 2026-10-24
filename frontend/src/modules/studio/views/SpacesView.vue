@@ -79,18 +79,18 @@ onMounted(fetchSpaces)
 </script>
 
 <template>
-  <div class="p-6 max-w-7xl mx-auto">
+  <div class="p-4 sm:p-6 max-w-7xl mx-auto">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-8 fade-in">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8 fade-in">
       <div>
-        <h1 class="text-2xl font-bold" style="color: var(--text-primary)">Мои пространства</h1>
-        <p class="text-sm mt-1" style="color: var(--text-muted)">Управляйте мероприятиями, зданиями и выставочными площадками</p>
+        <h1 class="text-xl sm:text-2xl font-bold" style="color: var(--text-primary)">Мои пространства</h1>
+        <p class="text-xs sm:text-sm mt-1" style="color: var(--text-muted)">Управляйте мероприятиями, зданиями и выставочными площадками</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2.5 sm:gap-3 shrink-0">
         <button id="refresh-spaces" @click="fetchSpaces" class="btn btn-ghost" :class="{ 'opacity-50': loading }">
           <RefreshCw :size="15" :class="loading ? 'animate-spin' : ''" />
         </button>
-        <button id="create-space-btn" @click="showCreateModal = true" class="btn btn-primary">
+        <button id="create-space-btn" @click="showCreateModal = true" class="btn btn-primary text-xs sm:text-sm py-2">
           <Plus :size="16" />
           Новое пространство
         </button>

@@ -29,6 +29,7 @@ const addRoomModal = ref(null) // { p1, p2, title, color }
 const addCircleModal = ref(null) // { lat, lng, radius, title }
 const selectedElement = ref(null) // { type, item }
 const drawingPoint = ref(null) // { lat, lng } start point for 2-click drawing
+const isMobileSidebarOpen = ref(false) // Mobile tools drawer state
 
 // Blueprint & Graph options
 const blueprintOpacity = ref(0.85)
@@ -1224,37 +1225,61 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full" style="height: calc(100vh - 56px)">
-    <!-- Sidebar -->
-    <FloorSidebar
-      :space="space"
-      :floors="floors"
-      :currentFloor="currentFloor"
-      :mode="mode"
-      :calibrating="calibrating"
-      :calibResult="calibResult"
-      :blueprintOpacity="blueprintOpacity"
-      :showGraph="showGraph"
-      :graphStats="graphStats"
-      :generatingGraph="generatingGraph"
-      :layoutCounts="layoutCounts"
-      v-model:calibDistance="calibDistance"
-      @select-floor="onFloorSelected"
-      @floor-created="onFloorCreated"
-      @upload-plan="showUpload = true"
-      @set-mode="mode = $event; cancelDrawing(); selectedElement = null"
-      @auto-graph="triggerAutoGraph(true)"
-      @toggle-show-graph="toggleShowGraph"
-      @update:blueprintOpacity="updateBlueprintOpacity"
-      @clear-layout="handleClearLayout"
-      @start-calib="startCalibration"
-      @save-calib="saveCalibration"
-      @cancel-calib="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null"
-      @delete-plan="onDeletePlan"
-    />
+  <div class="relative flex h-full overflow-hidden" style="height: calc(100vh - 56px)">
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div
+      v-if="isMobileSidebarOpen"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+      @click="isMobileSidebarOpen = false"
+    ></div>
+
+    <!-- Sidebar: regular panel on desktop (lg+), sliding drawer on mobile/tablet -->
+    <div
+      class="fixed inset-y-0 left-0 z-40 lg:static lg:z-auto transition-transform duration-300 ease-in-out"
+      :class="isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+    >
+      <FloorSidebar
+        :space="space"
+        :floors="floors"
+        :currentFloor="currentFloor"
+        :mode="mode"
+        :calibrating="calibrating"
+        :calibResult="calibResult"
+        :blueprintOpacity="blueprintOpacity"
+        :showGraph="showGraph"
+        :graphStats="graphStats"
+        :generatingGraph="generatingGraph"
+        :layoutCounts="layoutCounts"
+        v-model:calibDistance="calibDistance"
+        @select-floor="onFloorSelected"
+        @floor-created="onFloorCreated"
+        @upload-plan="showUpload = true; isMobileSidebarOpen = false"
+        @set-mode="mode = $event; cancelDrawing(); selectedElement = null; isMobileSidebarOpen = false"
+        @auto-graph="triggerAutoGraph(true)"
+        @toggle-show-graph="toggleShowGraph"
+        @update:blueprintOpacity="updateBlueprintOpacity"
+        @clear-layout="handleClearLayout"
+        @start-calib="startCalibration; isMobileSidebarOpen = false"
+        @save-calib="saveCalibration"
+        @cancel-calib="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null"
+        @delete-plan="onDeletePlan"
+        @close-mobile="isMobileSidebarOpen = false"
+      />
+    </div>
 
     <!-- Map Area -->
     <div class="flex-1 relative overflow-hidden architectural-canvas" style="background: #070c18">
+      <!-- Mobile Floating Sidebar Toggle Button -->
+      <button
+        type="button"
+        @click="isMobileSidebarOpen = !isMobileSidebarOpen"
+        class="lg:hidden absolute bottom-5 left-4 z-20 px-3.5 py-2.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-semibold cursor-pointer active:scale-95"
+      >
+        <Layers class="w-4 h-4 text-blue-400" />
+        <span>Инструменты</span>
+        <span v-if="mode !== 'view'" class="w-2 h-2 rounded-full bg-blue-500"></span>
+      </button>
+
       <!-- Loading overlay -->
       <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-20">
         <div class="flex flex-col items-center gap-3">
@@ -1267,37 +1292,37 @@ onBeforeUnmount(() => {
       <div id="floor-map" class="w-full h-full" style="z-index: 1"></div>
 
       <!-- Top Mode Instruction Floating Banner -->
-      <div v-if="mode !== 'view'" class="absolute top-4 left-1/2 -translate-x-1/2 z-10 card-glass px-4 py-2 flex items-center gap-3 text-sm font-medium shadow-xl border border-slate-700/60 backdrop-blur-md">
-        <span v-if="drawingPoint" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
-        <span v-else class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+      <div v-if="mode !== 'view'" class="absolute top-4 left-1/2 -translate-x-1/2 z-10 card-glass px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium shadow-xl border border-slate-700/60 backdrop-blur-md max-w-[92vw] text-center">
+        <span v-if="drawingPoint" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+        <span v-else class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shrink-0"></span>
 
-        <span v-if="mode === 'room' && !drawingPoint" class="text-slate-100">Кликните первый угол зоны/комнаты</span>
-        <span v-if="mode === 'room' && drawingPoint" class="text-amber-300">Кликните противоположный угол для завершения зоны</span>
+        <span v-if="mode === 'room' && !drawingPoint" class="text-slate-100 truncate">Кликните первый угол зоны</span>
+        <span v-if="mode === 'room' && drawingPoint" class="text-amber-300 truncate">Кликните второй угол для завершения зоны</span>
 
-        <span v-if="mode === 'wall' && !drawingPoint" class="text-slate-100">Кликните начальную точку стены</span>
-        <span v-if="mode === 'wall' && drawingPoint" class="text-amber-300">Кликните конечную точку стены</span>
+        <span v-if="mode === 'wall' && !drawingPoint" class="text-slate-100 truncate">Кликните начальную точку стены</span>
+        <span v-if="mode === 'wall' && drawingPoint" class="text-amber-300 truncate">Кликните конечную точку стены</span>
 
-        <span v-if="mode === 'circle'" class="text-slate-100">Кликните на карту, чтобы установить круглую колонну</span>
+        <span v-if="mode === 'circle'" class="text-slate-100 truncate">Кликните для установки колонны</span>
 
-        <span v-if="mode === 'rect' && !drawingPoint" class="text-slate-100">Кликните первый угол препятствия</span>
-        <span v-if="mode === 'rect' && drawingPoint" class="text-amber-300">Кликните второй угол препятствия</span>
+        <span v-if="mode === 'rect' && !drawingPoint" class="text-slate-100 truncate">Кликните первый угол препятствия</span>
+        <span v-if="mode === 'rect' && drawingPoint" class="text-amber-300 truncate">Кликните второй угол препятствия</span>
 
-        <span v-if="mode === 'corridor' && !drawingPoint" class="text-slate-100">Кликните начало прохода/коридора</span>
-        <span v-if="mode === 'corridor' && drawingPoint" class="text-amber-300">Кликните конец прохода/коридора</span>
+        <span v-if="mode === 'corridor' && !drawingPoint" class="text-slate-100 truncate">Кликните начало коридора</span>
+        <span v-if="mode === 'corridor' && drawingPoint" class="text-amber-300 truncate">Кликните конец коридора</span>
 
-        <span v-if="mode === 'poi'" class="text-slate-100">Кликните на карте, чтобы поставить POI</span>
+        <span v-if="mode === 'poi'" class="text-slate-100 truncate">Кликните для установки POI</span>
 
-        <button @click="mode = 'view'; cancelDrawing()" class="btn btn-ghost px-2 py-0.5 text-xs text-slate-400 hover:text-white ml-1">
-          ✕ Завершить
+        <button @click="mode = 'view'; cancelDrawing()" class="btn btn-ghost px-2 py-0.5 text-xs text-slate-400 hover:text-white shrink-0 ml-1">
+          ✕
         </button>
       </div>
 
       <!-- Selected Element Floating Toolbar -->
-      <div v-if="selectedElement && mode === 'view'" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 card-glass px-4 py-2.5 flex items-center gap-4 text-xs font-medium shadow-2xl border border-slate-700 backdrop-blur-md rounded-xl">
+      <div v-if="selectedElement && mode === 'view'" class="absolute bottom-16 sm:bottom-6 left-1/2 -translate-x-1/2 z-10 card-glass px-3 sm:px-4 py-2 sm:py-2.5 flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-4 text-xs font-medium shadow-2xl border border-slate-700 backdrop-blur-md rounded-xl max-w-[95vw]">
         <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-          <span class="text-slate-300">Выбран элемент:</span>
-          <b class="text-white capitalize">
+          <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
+          <span class="text-slate-300 hidden sm:inline">Выбран элемент:</span>
+          <b class="text-white capitalize truncate max-w-[140px] sm:max-w-none">
             {{ selectedElement.type === 'room' ? `Зона "${selectedElement.item.title || 'Без названия'}"` : '' }}
             {{ selectedElement.type === 'wall' ? 'Стена' : '' }}
             {{ selectedElement.type === 'obstacle' ? `Препятствие "${selectedElement.item.title || selectedElement.item.type}"` : '' }}
@@ -1307,21 +1332,21 @@ onBeforeUnmount(() => {
         </div>
         <!-- Nudge / Move Controls -->
         <div class="flex items-center gap-1 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/80">
-          <span class="text-[10px] text-slate-400 mr-1 select-none font-mono">Сдвиг:</span>
+          <span class="text-[10px] text-slate-400 mr-1 select-none font-mono hidden sm:inline">Сдвиг:</span>
           <button @click="nudgeSelected(-10, 0)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг влево (←)">←</button>
           <button @click="nudgeSelected(0, 10)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вверх (↑)">↑</button>
           <button @click="nudgeSelected(0, -10)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вниз (↓)">↓</button>
           <button @click="nudgeSelected(10, 0)" class="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Сдвиг вправо (→)">→</button>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 sm:gap-2">
           <button @click="duplicateSelectedElement" class="btn btn-ghost text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2 py-1 gap-1" title="Дублировать (Ctrl+D)">
-            <Copy :size="13" /> Копировать
+            <Copy :size="13" /> <span class="hidden sm:inline">Копировать</span>
           </button>
           <button @click="deleteSelectedElement" class="btn btn-ghost text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 gap-1" title="Удалить (Delete)">
-            <Trash2 :size="13" /> Удалить
+            <Trash2 :size="13" /> <span class="hidden sm:inline">Удалить</span>
           </button>
           <button @click="selectedElement = null; refreshMapLayers()" class="btn btn-ghost text-slate-400 px-2 py-1">
-            ✕ Закрыть
+            ✕
           </button>
         </div>
       </div>

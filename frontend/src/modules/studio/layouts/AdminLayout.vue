@@ -13,13 +13,13 @@ function logout() {
 <template>
   <div class="flex flex-col min-h-screen" style="background: var(--bg-base)">
     <!-- Top navbar -->
-    <header class="flex items-center justify-between px-6 h-14 shrink-0" style="background: var(--bg-card); border-bottom: 1px solid var(--border)">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, var(--accent), #6366f1)">
+    <header class="flex items-center justify-between px-3 sm:px-6 h-14 shrink-0 gap-2" style="background: var(--bg-card); border-bottom: 1px solid var(--border)">
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, var(--accent), #6366f1)">
           <Map :size="16" color="white" />
         </div>
-        <span class="font-bold text-sm tracking-wide" style="color: var(--text-primary)">КАРТА ПРОСТРАНСТВА</span>
-        <span class="badge badge-red text-xs font-medium">Studio</span>
+        <span class="font-bold text-xs sm:text-sm tracking-wide truncate" style="color: var(--text-primary)">КАРТА ПРОСТРАНСТВА</span>
+        <span class="badge badge-red text-[10px] sm:text-xs font-medium shrink-0">Studio</span>
       </div>
 
       <nav class="hidden sm:flex items-center gap-1">

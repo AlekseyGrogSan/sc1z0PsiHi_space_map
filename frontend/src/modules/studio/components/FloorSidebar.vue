@@ -41,7 +41,7 @@ const emit = defineEmits([
   'select-floor', 'floor-created', 'upload-plan', 'set-mode',
   'auto-graph', 'toggle-show-graph', 'update:blueprintOpacity',
   'clear-layout', 'start-calib', 'save-calib', 'cancel-calib',
-  'update:calibDistance', 'delete-plan',
+  'update:calibDistance', 'delete-plan', 'close-mobile',
 ])
 
 const showAddFloor = ref(false)
@@ -80,13 +80,23 @@ const BUILDER_MODES = [
 </script>
 
 <template>
-  <aside class="flex flex-col w-80 shrink-0 overflow-y-auto" style="background: var(--bg-card); border-right: 1px solid var(--border)">
+  <aside class="flex flex-col w-80 max-w-[85vw] h-full shrink-0 overflow-y-auto" style="background: var(--bg-card); border-right: 1px solid var(--border)">
     <!-- Space info -->
-    <div class="px-4 py-3 border-b" style="border-color: var(--border)">
-      <p class="text-xs font-medium mb-0.5" style="color: var(--text-muted)">Пространство</p>
-      <p class="font-semibold text-sm leading-tight truncate" style="color: var(--text-primary)">
-        {{ space?.title || space?.name || '...' }}
-      </p>
+    <div class="px-4 py-3 border-b flex items-center justify-between" style="border-color: var(--border)">
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-medium mb-0.5" style="color: var(--text-muted)">Пространство</p>
+        <p class="font-semibold text-sm leading-tight truncate" style="color: var(--text-primary)">
+          {{ space?.title || space?.name || '...' }}
+        </p>
+      </div>
+      <button
+        type="button"
+        @click="emit('close-mobile')"
+        class="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-2 shrink-0"
+        title="Скрыть панель"
+      >
+        <X :size="16" />
+      </button>
     </div>
 
     <!-- Floors list -->

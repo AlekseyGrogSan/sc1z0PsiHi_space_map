@@ -62,23 +62,23 @@ const primaryInstruction = computed(() => {
   >
     <div
       v-if="route"
-      class="w-full max-w-lg mx-auto bg-slate-900/95 backdrop-blur-xl border border-blue-500/40 rounded-3xl p-4 shadow-2xl shadow-blue-950/40 pointer-events-auto flex flex-col gap-3 text-slate-100 ring-1 ring-blue-500/20"
+      class="w-full max-w-lg mx-auto bg-slate-900/95 backdrop-blur-xl border border-blue-500/40 rounded-3xl p-3.5 sm:p-4 shadow-2xl shadow-blue-950/40 pointer-events-auto flex flex-col gap-2.5 sm:gap-3 text-slate-100 ring-1 ring-blue-500/20 max-h-[85dvh] overflow-y-auto overscroll-contain"
     >
       <!-- Верхняя строка: Иконка, Дистанция, Время и Кнопка сброса -->
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-            <Footprints class="w-5 h-5" />
+        <div class="flex items-center gap-2.5 sm:gap-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+            <Footprints class="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
 
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-base font-bold text-white">{{ formattedDistance }}</span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-300 font-medium border border-blue-500/30">
+              <span class="text-sm sm:text-base font-bold text-white">{{ formattedDistance }}</span>
+              <span class="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-300 font-medium border border-blue-500/30">
                 {{ formattedTime }}
               </span>
             </div>
-            <div class="text-[11px] text-slate-400">
+            <div class="text-[10px] sm:text-[11px] text-slate-400">
               Оптимальный маршрут без препятствий
             </div>
           </div>
@@ -86,18 +86,18 @@ const primaryInstruction = computed(() => {
 
         <button
           type="button"
-          class="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+          class="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
           title="Сбросить маршрут"
           @click="emit('reset')"
         >
-          <X class="w-5 h-5" />
+          <X class="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
       </div>
 
       <!-- Адреса: Откуда и Куда с возможностью выбора старта на карте -->
       <div class="flex flex-col gap-1.5 p-2.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-xs">
         <!-- Откуда -->
-        <div class="flex items-center justify-between gap-2">
+        <div class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
           <div class="flex items-center gap-2 min-w-0 flex-1">
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 shadow-sm shadow-emerald-400"></span>
             <span class="text-slate-400 shrink-0">Откуда:</span>
@@ -106,7 +106,7 @@ const primaryInstruction = computed(() => {
           <button
             type="button"
             @click="emit('pickOriginOnMap')"
-            class="px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all shrink-0 cursor-pointer flex items-center gap-1"
+            class="px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-medium transition-all shrink-0 cursor-pointer flex items-center gap-1"
             :class="isPickingOrigin
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 ring-1 ring-emerald-400'
               : 'bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700'"

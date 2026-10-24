@@ -276,7 +276,7 @@ watch(
 </script>
 
 <template>
-  <main class="relative w-full h-full min-h-screen bg-slate-950 overflow-hidden flex flex-col">
+  <main class="relative w-full h-[100dvh] min-h-[100dvh] bg-slate-950 overflow-hidden flex flex-col select-none">
     <!-- Индикатор загрузки -->
     <div
       v-if="isLoading"
@@ -311,6 +311,7 @@ watch(
       <div
         v-if="space.is_published === false"
         class="absolute top-0 left-0 right-0 z-30 bg-amber-500/90 backdrop-blur-md text-amber-950 px-4 py-1.5 text-center text-xs font-semibold shadow-md flex items-center justify-center gap-2"
+        style="padding-top: max(0.375rem, env(safe-area-inset-top, 0px));"
       >
         <span>⚠️ Режим предпросмотра: пространство не опубликовано (черновик)</span>
       </div>
@@ -333,8 +334,9 @@ watch(
 
       <!-- ВЕРХНИЙ ОВЕРЛЕЙ: Поиск и чипсы категорий -->
       <header
-        class="absolute left-0 right-0 z-20 p-3 sm:p-4 max-w-2xl mx-auto pointer-events-none"
+        class="absolute left-0 right-0 z-20 p-2.5 sm:p-4 max-w-2xl mx-auto pointer-events-none"
         :class="space.is_published === false ? 'top-8' : 'top-0'"
+        style="padding-top: max(0.625rem, env(safe-area-inset-top, 0px));"
       >
         <ViewerSearch
           v-model="searchQuery"
@@ -346,8 +348,8 @@ watch(
 
       <!-- ПРАВЫЙ ОВЕРЛЕЙ: Плавающий переключатель этажей -->
       <div
-        class="absolute right-3 sm:right-5 z-20 pointer-events-none"
-        :class="space.is_published === false ? 'top-36' : 'top-28'"
+        class="absolute right-2.5 sm:right-5 z-20 pointer-events-none"
+        :class="space.is_published === false ? 'top-36' : 'top-24 sm:top-28'"
       >
         <FloorSelector
           :floors="space.floors"
@@ -357,7 +359,10 @@ watch(
       </div>
 
       <!-- НИЖНИЙ ОВЕРЛЕЙ: Bottom Sheet карточки POI или Плашка маршрута -->
-      <footer class="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4 pointer-events-none flex flex-col items-center">
+      <footer
+        class="absolute bottom-0 left-0 right-0 z-20 p-2.5 sm:p-4 pointer-events-none flex flex-col items-center"
+        style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));"
+      >
         <!-- Плашка активного маршрута -->
         <RouteBar
           v-if="isRouting && activeRoute"
