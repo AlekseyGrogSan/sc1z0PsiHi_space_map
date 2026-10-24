@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Search, X, Building2, Utensils, Bath, Mic, Sparkles, DoorOpen, Armchair, Trash2, ShoppingBag, Gamepad2, Star, Wifi } from 'lucide-vue-next'
+import { computed, ref, onMounted, nextTick } from 'vue'
+import {
+  Search, X, Building2, Utensils, Bath, Mic, Sparkles, DoorOpen,
+  Armchair, Trash2, ShoppingBag, Gamepad2, Star, Wifi,
+  ChevronLeft, ChevronRight
+} from 'lucide-vue-next'
 import type { POI, PoiCategory } from '../types'
 
 interface Props {
@@ -18,6 +22,9 @@ const emit = defineEmits<{
 }>()
 
 const isFocused = ref(false)
+const categoriesContainer = ref<HTMLDivElement | null>(null)
+const canScrollLeft = ref(false)
+const canScrollRight = ref(false)
 
 const categories: { key: PoiCategory | 'all'; label: string; icon: any }[] = [
   { key: 'all', label: 'Все', icon: Sparkles },
@@ -33,6 +40,62 @@ const categories: { key: PoiCategory | 'all'; label: string; icon: any }[] = [
   { key: 'wifi', label: 'Wi-Fi', icon: Wifi },
   { key: 'custom', label: 'Особые', icon: Star },
 ]
+
+function checkScroll() {
+  if (!categoriesContainer.value) return
+  const el = categoriesContainer.value
+  canScrollLeft.value = el.scrollLeft > 6
+  canScrollRight.value = el.scrollLeft < el.scrollWidth - el.clientWidth - 6
+}
+
+function scrollCategories(direction: 'left' | 'right') {
+  if (!categoriesContainer.value) return
+  const step = 200
+  categoriesContainer.value.scrollBy({
+    left: direction === 'left' ? -step : step,
+    behavior: 'smooth',
+  })
+}
+
+function onCategoriesWheel(e: WheelEvent) {
+  if (!categoriesContainer.value) return
+  if (e.deltaY !== 0) {
+    e.preventDefault()
+    categoriesContainer.value.scrollLeft += e.deltaY
+    checkScroll()
+  }
+}
+
+// Drag to scroll
+let isDragging = false
+let startX = 0
+let initialScrollLeft = 0
+
+function onMouseDown(e: MouseEvent) {
+  if (!categoriesContainer.value) return
+  isDragging = true
+  startX = e.pageX - categoriesContainer.value.offsetLeft
+  initialScrollLeft = categoriesContainer.value.scrollLeft
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!isDragging || !categoriesContainer.value) return
+  e.preventDefault()
+  const x = e.pageX - categoriesContainer.value.offsetLeft
+  const walk = (x - startX) * 1.5
+  categoriesContainer.value.scrollLeft = initialScrollLeft - walk
+  checkScroll()
+}
+
+function onMouseUp() {
+  isDragging = false
+}
+
+onMounted(() => {
+  nextTick(() => {
+    checkScroll()
+  })
+})
 
 const searchResults = computed(() => {
   const q = props.modelValue.trim().toLowerCase()
@@ -140,23 +203,62 @@ function handleSelectPoi(poi: POI) {
       </transition>
     </div>
 
-    <!-- Чипсы категорий -->
-    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
-      <button
-        v-for="cat in categories"
-        :key="cat.key"
-        type="button"
-        class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium shrink-0 transition-all cursor-pointer shadow-sm select-none"
-        :class="[
-          selectedCategory === cat.key
-            ? 'bg-blue-600 text-white shadow-blue-600/30 shadow-md ring-1 ring-blue-400'
-            : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 backdrop-blur-md',
-        ]"
-        @click="selectCategory(cat.key)"
+    <!-- Чипсы категорий с кнопками прокрутки и адаптивным скроллом -->
+    <div class="relative w-full group/chips flex items-center">
+      <!-- Кнопка прокрутки влево -->
+      <transition enter-active-class="transition duration-150" enter-from-class="opacity-0 scale-90" enter-to-class="opacity-100 scale-100" leave-active-class="transition duration-150" leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-90">
+        <button
+          v-if="canScrollLeft"
+          type="button"
+          @click="scrollCategories('left')"
+          class="absolute -left-2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-slate-700 text-slate-200 hover:text-white hover:bg-slate-800 flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          title="Прокрутить назад"
+        >
+          <ChevronLeft class="w-4 h-4" />
+        </button>
+      </transition>
+
+      <!-- Контейнер чипсов -->
+      <div
+        ref="categoriesContainer"
+        class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1 w-full cursor-grab active:cursor-grabbing select-none"
+        style="scroll-behavior: smooth;"
+        @wheel="onCategoriesWheel"
+        @scroll.passive="checkScroll"
+        @mousedown="onMouseDown"
+        @mousemove="onMouseMove"
+        @mouseup="onMouseUp"
+        @mouseleave="onMouseUp"
       >
-        <component :is="cat.icon" class="w-3.5 h-3.5" />
-        <span>{{ cat.label }}</span>
-      </button>
+        <button
+          v-for="cat in categories"
+          :key="cat.key"
+          type="button"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium shrink-0 transition-all cursor-pointer shadow-sm select-none"
+          :class="[
+            selectedCategory === cat.key
+              ? 'bg-blue-600 text-white shadow-blue-600/30 shadow-md ring-1 ring-blue-400'
+              : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 backdrop-blur-md',
+          ]"
+          @click="selectCategory(cat.key)"
+        >
+          <component :is="cat.icon" class="w-3.5 h-3.5" />
+          <span>{{ cat.label }}</span>
+        </button>
+      </div>
+
+      <!-- Кнопка прокрутки вправо -->
+      <transition enter-active-class="transition duration-150" enter-from-class="opacity-0 scale-90" enter-to-class="opacity-100 scale-100" leave-active-class="transition duration-150" leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-90">
+        <button
+          v-if="canScrollRight"
+          type="button"
+          @click="scrollCategories('right')"
+          class="absolute -right-2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-slate-700 text-slate-200 hover:text-white hover:bg-slate-800 flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          title="Прокрутить вперёд"
+        >
+          <ChevronRight class="w-4 h-4" />
+        </button>
+      </transition>
     </div>
   </div>
 </template>

@@ -32,6 +32,9 @@ const selectedCategory = ref<PoiCategory | 'all'>('all')
 // Состояние навигации и маршрута
 const isRouting = ref(false)
 const activeRoute = ref<RouteResponse | null>(null)
+const routeOrigin = ref<(RoutePoint & { title?: string; poiId?: string }) | null>(null)
+const routeTarget = ref<POI | null>(null)
+const isPickingStartOnMap = ref(false)
 
 // Модалка 360 панорамы
 const isPanoramaOpen = ref(false)
@@ -93,6 +96,13 @@ function handleSelectFloor(floor: Floor) {
 
 // Выбор POI из карты или поиска
 function handleSelectPoi(poi: POI) {
+  // Если включен режим выбора точки старта на карте — задаем эту POI как старт
+  if (isPickingStartOnMap.value) {
+    handleSetAsOrigin(poi)
+    isPickingStartOnMap.value = false
+    return
+  }
+
   selectedPoi.value = poi
 
   // Если точка на другом этаже — автоматически переключаем этаж
@@ -109,45 +119,129 @@ function handleCloseBottomSheet() {
   selectedPoi.value = null
 }
 
-// Построение маршрута до выбранной точки
-async function handleBuildRoute(targetPoi: POI) {
-  if (!space.value || !activeFloor.value) return
+// Задать POI как точку отправления («Начать отсюда»)
+function handleSetAsOrigin(poi: POI) {
+  routeOrigin.value = {
+    x: poi.x,
+    y: poi.y,
+    floor_id: poi.floor_id,
+    title: poi.title,
+    poiId: poi.id,
+  }
+  selectedPoi.value = null
 
-  // Ищем точку отправления: вход на текущем этаже, либо главный вход
-  const entrancePoi = space.value.pois.find(
-    (p) => p.category === 'entrance' && p.floor_id === activeFloor.value?.id
-  ) || space.value.pois.find((p) => p.category === 'entrance')
+  // Если целевая точка уже выбрана — сразу строим маршрут
+  if (routeTarget.value) {
+    calculateRoute()
+  }
+}
 
-  const origin: RoutePoint = entrancePoi
-    ? { x: entrancePoi.x, y: entrancePoi.y, floor_id: entrancePoi.floor_id }
-    : { x: 1000, y: 1285, floor_id: activeFloor.value.id }
+// Переключение режима выбора старта на карте
+function togglePickOriginOnMap() {
+  isPickingStartOnMap.value = !isPickingStartOnMap.value
+}
+
+// Клик по карте в произвольное место
+function handleMapClick(coords: { x: number; y: number; floor_id: string }) {
+  if (isPickingStartOnMap.value) {
+    routeOrigin.value = {
+      x: coords.x,
+      y: coords.y,
+      floor_id: coords.floor_id,
+      title: `Точка (${coords.x}, ${coords.y})`,
+    }
+    isPickingStartOnMap.value = false
+    if (routeTarget.value) {
+      calculateRoute()
+    }
+  }
+}
+
+// Перетаскивание маркера старта "A" по карте с автопересчетом
+function handleUpdateOrigin(coords: { x: number; y: number; floor_id: string }) {
+  routeOrigin.value = {
+    ...routeOrigin.value,
+    x: coords.x,
+    y: coords.y,
+    floor_id: coords.floor_id,
+    title: routeOrigin.value?.title || `Точка (${coords.x}, ${coords.y})`,
+  }
+  if (routeTarget.value) {
+    calculateRoute()
+  }
+}
+
+// Расчет маршрута между routeOrigin и routeTarget
+async function calculateRoute() {
+  if (!space.value || !routeTarget.value || !routeOrigin.value) return
+
+  const origin: RoutePoint = {
+    x: routeOrigin.value.x,
+    y: routeOrigin.value.y,
+    floor_id: routeOrigin.value.floor_id,
+  }
 
   const destination: RoutePoint = {
-    x: targetPoi.x,
-    y: targetPoi.y,
-    floor_id: targetPoi.floor_id,
+    x: routeTarget.value.x,
+    y: routeTarget.value.y,
+    floor_id: routeTarget.value.floor_id,
   }
 
   try {
     const routeData = await getRoute({
       origin,
       destination,
-      spaceId: space.value?.id,
-      to_poi_id: targetPoi.id,
+      spaceId: space.value.id,
+      to_poi_id: routeTarget.value.id,
     })
     activeRoute.value = routeData
     isRouting.value = true
-    // Скрываем BottomSheet POI, чтобы показать информативную плашку маршрута
     selectedPoi.value = null
   } catch (err) {
     console.error('Ошибка расчета маршрута:', err)
   }
 }
 
+// Построение маршрута до выбранной точки («Маршрут сюда»)
+async function handleBuildRoute(targetPoi: POI) {
+  if (!space.value || !activeFloor.value) return
+
+  routeTarget.value = targetPoi
+
+  // Если точка отправления еще не задана — ищем вход на текущем этаже или центр этажа
+  if (!routeOrigin.value) {
+    const entrancePoi = space.value.pois.find(
+      (p) => p.category === 'entrance' && p.floor_id === activeFloor.value?.id
+    ) || space.value.pois.find((p) => p.category === 'entrance')
+
+    if (entrancePoi) {
+      routeOrigin.value = {
+        x: entrancePoi.x,
+        y: entrancePoi.y,
+        floor_id: entrancePoi.floor_id,
+        title: entrancePoi.title || 'Главный вход',
+        poiId: entrancePoi.id,
+      }
+    } else {
+      routeOrigin.value = {
+        x: Math.round((activeFloor.value.width || 1000) / 2),
+        y: Math.round((activeFloor.value.height || 800) / 2),
+        floor_id: activeFloor.value.id,
+        title: 'Текущая позиция',
+      }
+    }
+  }
+
+  await calculateRoute()
+}
+
 // Сброс активного маршрута
 function handleResetRoute() {
   isRouting.value = false
   activeRoute.value = null
+  routeOrigin.value = null
+  routeTarget.value = null
+  isPickingStartOnMap.value = false
 }
 
 // Открытие виртуального тура 360°
@@ -229,7 +323,11 @@ watch(
           :selected-poi="selectedPoi"
           :route="activeRoute"
           :is-routing="isRouting"
+          :origin-point="routeOrigin"
+          :is-picking-origin="isPickingStartOnMap"
           @select-poi="handleSelectPoi"
+          @map-click="handleMapClick"
+          @update-origin="handleUpdateOrigin"
         />
       </div>
 
@@ -264,9 +362,12 @@ watch(
         <RouteBar
           v-if="isRouting && activeRoute"
           :route="activeRoute"
-          :target-poi-title="selectedPoi?.title"
+          :target-poi-title="routeTarget?.title || selectedPoi?.title"
+          :origin-title="routeOrigin?.title"
+          :is-picking-origin="isPickingStartOnMap"
           @reset="handleResetRoute"
           @open-virtual-tour="handleOpenVirtualTour"
+          @pick-origin-on-map="togglePickOriginOnMap"
         />
 
         <!-- Bottom Sheet выбранного POI -->
@@ -276,6 +377,7 @@ watch(
           :floor-title="activeFloor.title"
           @close="handleCloseBottomSheet"
           @build-route="handleBuildRoute"
+          @set-as-origin="handleSetAsOrigin"
           @open-panorama="handleOpenPanorama"
         />
       </footer>

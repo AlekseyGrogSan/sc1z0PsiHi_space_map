@@ -7,7 +7,7 @@ import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
 import {
   ArrowLeft, Layers, Trash2, Check, X, Square, Minus, Circle, Box,
-  Footprints, MapPin, Zap, Eye, RotateCcw
+  Footprints, MapPin, Zap, Eye, RotateCcw, Copy
 } from 'lucide-vue-next'
 
 const props = defineProps({ spaceId: String, floorId: String })
@@ -687,6 +687,80 @@ async function deleteSelectedElement() {
   refreshMapLayers()
 }
 
+// Duplicate / Copy Selected Element
+async function duplicateSelectedElement() {
+  if (!selectedElement.value) return
+  const { type, item } = selectedElement.value
+  const offset = 40
+
+  if (type === 'room') {
+    const copy = {
+      ...item,
+      id: 'r_' + Date.now(),
+      x: item.x + offset,
+      y: item.y + offset,
+      title: item.title ? `${item.title} (копия)` : 'Зона',
+    }
+    layoutData.value.rooms = [...(layoutData.value.rooms || []), copy]
+    selectedElement.value = { type: 'room', item: copy }
+    await saveLayoutData()
+  } else if (type === 'wall') {
+    const copy = {
+      ...item,
+      id: 'w_' + Date.now(),
+      x1: item.x1 + offset,
+      y1: item.y1 + offset,
+      x2: item.x2 + offset,
+      y2: item.y2 + offset,
+    }
+    layoutData.value.walls = [...(layoutData.value.walls || []), copy]
+    selectedElement.value = { type: 'wall', item: copy }
+    await saveLayoutData()
+  } else if (type === 'obstacle') {
+    const copy = {
+      ...item,
+      id: 'o_' + Date.now(),
+      x: item.x + offset,
+      y: item.y + offset,
+      title: item.title ? `${item.title} (копия)` : (item.type === 'circle' ? 'Колонна (копия)' : 'Препятствие (копия)'),
+    }
+    layoutData.value.obstacles = [...(layoutData.value.obstacles || []), copy]
+    selectedElement.value = { type: 'obstacle', item: copy }
+    await saveLayoutData()
+  } else if (type === 'corridor') {
+    const copy = {
+      ...item,
+      id: 'c_' + Date.now(),
+      x1: item.x1 + offset,
+      y1: item.y1 + offset,
+      x2: item.x2 + offset,
+      y2: item.y2 + offset,
+    }
+    layoutData.value.corridors = [...(layoutData.value.corridors || []), copy]
+    selectedElement.value = { type: 'corridor', item: copy }
+    await saveLayoutData()
+  } else if (type === 'poi') {
+    try {
+      const { data: newPoi } = await poisApi.create(currentFloor.value.id, {
+        title: (item.title || 'Точка') + ' (копия)',
+        category: item.category || 'stand',
+        description: item.description || '',
+        x_coord: Number(item.x_coord ?? item.x) + offset,
+        y_coord: Number(item.y_coord ?? item.y) + offset,
+      })
+      await loadFloorData()
+      if (newPoi) {
+        selectedElement.value = { type: 'poi', item: newPoi }
+      }
+      await triggerAutoGraph(false)
+    } catch (err) {
+      console.error('Ошибка дублирования POI:', err)
+    }
+  }
+
+  refreshMapLayers()
+}
+
 // Clear All Layout Elements
 async function handleClearLayout() {
   if (!confirm('Вы уверены, что хотите удалить все стены, зоны, препятствия и коридоры на этом этаже?')) {
@@ -785,13 +859,39 @@ function toggleShowGraph(val) {
   drawNavGraph()
 }
 
+function handleKeyDown(e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D' || e.key === 'c' || e.key === 'C')) {
+    if (selectedElement.value && mode.value === 'view') {
+      e.preventDefault()
+      duplicateSelectedElement()
+    }
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    const tag = document.activeElement?.tagName?.toLowerCase()
+    if (tag !== 'input' && tag !== 'textarea') {
+      if (selectedElement.value && mode.value === 'view') {
+        e.preventDefault()
+        deleteSelectedElement()
+      }
+    }
+  } else if (e.key === 'Escape') {
+    if (drawingPoint.value) {
+      cancelDrawing()
+    } else if (selectedElement.value) {
+      selectedElement.value = null
+      refreshMapLayers()
+    }
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeyDown)
   await fetchData()
   await nextTick()
   await initMap()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
   if (map) map.remove()
 })
 </script>
@@ -878,7 +978,10 @@ onBeforeUnmount(() => {
           </b>
         </div>
         <div class="flex items-center gap-2">
-          <button @click="deleteSelectedElement" class="btn btn-ghost text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 gap-1">
+          <button @click="duplicateSelectedElement" class="btn btn-ghost text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2 py-1 gap-1" title="Дублировать (Ctrl+D)">
+            <Copy :size="13" /> Копировать
+          </button>
+          <button @click="deleteSelectedElement" class="btn btn-ghost text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 gap-1" title="Удалить (Delete)">
             <Trash2 :size="13" /> Удалить
           </button>
           <button @click="selectedElement = null; refreshMapLayers()" class="btn btn-ghost text-slate-400 px-2 py-1">

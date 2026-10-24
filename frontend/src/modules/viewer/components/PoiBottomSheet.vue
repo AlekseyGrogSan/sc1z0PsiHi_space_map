@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { Navigation, Rotate3d, X, Building2, Utensils, Bath, Mic, DoorOpen, DoorClosed, Wifi, Info, Armchair, Trash2, ShoppingBag, Gamepad2, Star } from 'lucide-vue-next'
+import {
+  Navigation, Rotate3d, X, Building2, Utensils, Bath, Mic, DoorOpen,
+  DoorClosed, Wifi, Info, Armchair, Trash2, ShoppingBag, Gamepad2,
+  Star, MapPin
+} from 'lucide-vue-next'
 import type { POI, PoiCategory } from '../types'
 
 interface Props {
@@ -12,6 +16,7 @@ defineProps<Props>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'buildRoute', poi: POI): void
+  (e: 'setAsOrigin', poi: POI): void
   (e: 'openPanorama', poi: POI): void
 }>()
 
@@ -92,25 +97,35 @@ const categoryInfo: Record<PoiCategory, { label: string; icon: any; color: strin
       </div>
 
       <!-- Кнопки действий -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-        <!-- Построить маршрут -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+        <!-- Построить маршрут сюда -->
         <button
           type="button"
-          class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-semibold text-sm shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
+          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-semibold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
           @click="emit('buildRoute', poi)"
         >
-          <Navigation class="w-4 h-4 fill-white" />
-          <span>Построить маршрут сюда</span>
+          <Navigation class="w-3.5 h-3.5 fill-white" />
+          <span>Маршрут сюда</span>
+        </button>
+
+        <!-- Начать отсюда -->
+        <button
+          type="button"
+          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+          @click="emit('setAsOrigin', poi)"
+        >
+          <MapPin class="w-3.5 h-3.5" />
+          <span>Начать отсюда</span>
         </button>
 
         <!-- Осмотреться в 360 -->
         <button
           type="button"
-          class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 border border-slate-700 font-semibold text-sm transition-all cursor-pointer"
+          class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 border border-slate-700 font-semibold text-xs transition-all cursor-pointer"
           @click="emit('openPanorama', poi)"
         >
-          <Rotate3d class="w-4 h-4 text-purple-400" />
-          <span>Осмотреться в 360°</span>
+          <Rotate3d class="w-3.5 h-3.5 text-purple-400" />
+          <span>Тур 360°</span>
         </button>
       </div>
     </div>

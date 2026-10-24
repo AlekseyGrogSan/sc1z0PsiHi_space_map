@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import L from 'leaflet'
-import type { Floor, POI, RouteResponse, PoiCategory } from '../types'
+import type { Floor, POI, RouteResponse, PoiCategory, RoutePoint } from '../types'
 
 interface Props {
   floor: Floor
@@ -9,12 +9,16 @@ interface Props {
   selectedPoi: POI | null
   route: RouteResponse | null
   isRouting: boolean
+  originPoint?: RoutePoint | null
+  isPickingOrigin?: boolean
 }
 
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'selectPoi', poi: POI): void
+  (e: 'mapClick', coords: { x: number; y: number; floor_id: string }): void
+  (e: 'updateOrigin', coords: { x: number; y: number; floor_id: string }): void
 }>()
 
 const mapContainer = ref<HTMLDivElement | null>(null)
@@ -134,6 +138,14 @@ function initMap() {
   layoutGroup = L.layerGroup().addTo(map)
   markerGroup = L.layerGroup().addTo(map)
   routeEndpointsGroup = L.layerGroup().addTo(map)
+
+  map.on('click', (e) => {
+    emit('mapClick', {
+      x: Math.round(e.latlng.lng),
+      y: Math.round(e.latlng.lat),
+      floor_id: props.floor.id,
+    })
+  })
 
   renderFloorPlan()
   renderMarkers()
@@ -303,7 +315,41 @@ function renderRoute() {
     routeEndpointsGroup.clearLayers()
   }
 
-  if (!props.isRouting || !props.route || !props.route.points?.length) return
+  if (!props.isRouting || !props.route || !props.route.points?.length) {
+    if (props.originPoint && props.originPoint.floor_id === props.floor.id) {
+      const startLatlng: [number, number] = [props.originPoint.y, props.originPoint.x]
+      const startIcon = L.divIcon({
+        className: 'route-start-icon',
+        html: `
+          <div class="relative flex flex-col items-center group cursor-grab active:cursor-grabbing">
+            <div style="width: 28px; height: 28px; background-color: #10b981; border: 3px solid #ffffff; border-radius: 9999px; box-shadow: 0 0 16px rgba(16,185,129,0.9);" class="flex items-center justify-center text-white font-black text-xs select-none">
+              A
+            </div>
+            <div class="absolute -top-7 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold text-emerald-300 pointer-events-none select-none whitespace-nowrap shadow-lg">
+              Старт
+            </div>
+          </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      })
+      const startMarker = L.marker(startLatlng, {
+        icon: startIcon,
+        draggable: true,
+        zIndexOffset: 3000,
+      }).addTo(routeEndpointsGroup!)
+
+      startMarker.on('dragend', () => {
+        const pos = startMarker.getLatLng()
+        emit('updateOrigin', {
+          x: Math.round(pos.lng),
+          y: Math.round(pos.lat),
+          floor_id: props.floor.id,
+        })
+      })
+    }
+    return
+  }
 
   // Получаем точки маршрута для текущего этажа
   const floorPoints = props.route.points.filter((p) => p.floor_id === props.floor.id)
@@ -324,29 +370,59 @@ function renderRoute() {
   }).addTo(map)
 
   // Начальная и конечная точки маршрута
-  const startLatlng = latlngs[0]
+  const startLatlng: [number, number] = (props.originPoint && props.originPoint.floor_id === props.floor.id)
+    ? [props.originPoint.y, props.originPoint.x]
+    : latlngs[0]
   const endLatlng = latlngs[latlngs.length - 1]
 
   const startIcon = L.divIcon({
     className: 'route-start-icon',
     html: `
-      <div style="width: 22px; height: 22px; background-color: #10b981; border: 3px solid #ffffff; border-radius: 9999px; box-shadow: 0 0 10px rgba(16,185,129,0.8);"></div>
+      <div class="relative flex flex-col items-center group cursor-grab active:cursor-grabbing">
+        <div style="width: 28px; height: 28px; background-color: #10b981; border: 3px solid #ffffff; border-radius: 9999px; box-shadow: 0 0 16px rgba(16,185,129,0.9);" class="flex items-center justify-center text-white font-black text-xs select-none">
+          A
+        </div>
+        <div class="absolute -top-7 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold text-emerald-300 pointer-events-none select-none whitespace-nowrap shadow-lg">
+          Старт (перетащите)
+        </div>
+      </div>
     `,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   })
 
   const endIcon = L.divIcon({
     className: 'route-end-icon',
     html: `
-      <div style="width: 26px; height: 26px; background-color: #e30613; border: 3px solid #ffffff; border-radius: 9999px; box-shadow: 0 0 12px rgba(227,6,19,0.9); animation: pulse 1.5s infinite;"></div>
+      <div class="relative flex flex-col items-center">
+        <div style="width: 28px; height: 28px; background-color: #ef4444; border: 3px solid #ffffff; border-radius: 9999px; box-shadow: 0 0 18px rgba(239,68,68,0.9); animation: pulse 1.5s infinite;" class="flex items-center justify-center text-white font-black text-xs select-none">
+          B
+        </div>
+        <div class="absolute -top-7 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold text-rose-300 pointer-events-none select-none whitespace-nowrap shadow-lg">
+          Финиш
+        </div>
+      </div>
     `,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   })
 
-  L.marker(startLatlng, { icon: startIcon, zIndexOffset: 2000 }).addTo(routeEndpointsGroup!)
-  L.marker(endLatlng, { icon: endIcon, zIndexOffset: 2000 }).addTo(routeEndpointsGroup!)
+  const startMarker = L.marker(startLatlng, {
+    icon: startIcon,
+    draggable: true,
+    zIndexOffset: 3000,
+  }).addTo(routeEndpointsGroup!)
+
+  startMarker.on('dragend', () => {
+    const pos = startMarker.getLatLng()
+    emit('updateOrigin', {
+      x: Math.round(pos.lng),
+      y: Math.round(pos.lat),
+      floor_id: props.floor.id,
+    })
+  })
+
+  L.marker(endLatlng, { icon: endIcon, zIndexOffset: 3000 }).addTo(routeEndpointsGroup!)
 }
 
 // Следим за сменой этажа -> перерисовываем оверлей, авто fitBounds и маркеры
@@ -368,10 +444,10 @@ watch([() => props.pois, () => props.selectedPoi], () => {
   }
 })
 
-// Следим за маршрутом
-watch([() => props.route, () => props.isRouting], () => {
+// Следим за маршрутом и точкой старта
+watch([() => props.route, () => props.isRouting, () => props.originPoint], () => {
   renderRoute()
-})
+}, { deep: true })
 
 onMounted(() => {
   initMap()
@@ -389,11 +465,23 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative w-full h-full bg-slate-950 overflow-hidden">
     <!-- Контейнер Leaflet карты -->
-    <div ref="mapContainer" class="w-full h-full select-none outline-none"></div>
+    <div
+      ref="mapContainer"
+      class="w-full h-full select-none outline-none"
+      :class="{ 'cursor-crosshair-mode': isPickingOrigin }"
+    ></div>
   </div>
 </template>
 
 <style>
+/* Режим выбора точки на карте */
+.cursor-crosshair-mode,
+.cursor-crosshair-mode .leaflet-container,
+.cursor-crosshair-mode .leaflet-interactive,
+.cursor-crosshair-mode .leaflet-grab {
+  cursor: crosshair !important;
+}
+
 /* Стили для кастомных Leaflet divIcon */
 .poi-custom-div-icon,
 .route-start-icon,

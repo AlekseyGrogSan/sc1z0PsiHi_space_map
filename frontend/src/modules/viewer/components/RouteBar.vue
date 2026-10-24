@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Footprints, X, ArrowUpRight, Rotate3d, CornerDownRight } from 'lucide-vue-next'
+import { Footprints, X, ArrowUpRight, Rotate3d, CornerDownRight, MapPin } from 'lucide-vue-next'
 import type { RouteResponse } from '../types'
 
 interface Props {
   route: RouteResponse | null
   targetPoiTitle?: string
+  originTitle?: string
+  isPickingOrigin?: boolean
 }
 
 const props = defineProps<Props>()
@@ -13,6 +15,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'reset'): void
   (e: 'openVirtualTour'): void
+  (e: 'pickOriginOnMap'): void
 }>()
 
 // Форматирование расстояния
@@ -75,20 +78,54 @@ const primaryInstruction = computed(() => {
                 {{ formattedTime }}
               </span>
             </div>
-            <div v-if="targetPoiTitle" class="text-xs text-slate-400 truncate max-w-56">
-              Маршрут до: <span class="text-slate-200 font-medium">{{ targetPoiTitle }}</span>
+            <div class="text-[11px] text-slate-400">
+              Оптимальный маршрут без препятствий
             </div>
           </div>
         </div>
 
         <button
           type="button"
-          class="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+          class="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
           title="Сбросить маршрут"
           @click="emit('reset')"
         >
           <X class="w-5 h-5" />
         </button>
+      </div>
+
+      <!-- Адреса: Откуда и Куда с возможностью выбора старта на карте -->
+      <div class="flex flex-col gap-1.5 p-2.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-xs">
+        <!-- Откуда -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 shadow-sm shadow-emerald-400"></span>
+            <span class="text-slate-400 shrink-0">Откуда:</span>
+            <span class="text-slate-100 font-semibold truncate">{{ originTitle || 'Точка отправления' }}</span>
+          </div>
+          <button
+            type="button"
+            @click="emit('pickOriginOnMap')"
+            class="px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all shrink-0 cursor-pointer flex items-center gap-1"
+            :class="isPickingOrigin
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 ring-1 ring-emerald-400'
+              : 'bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700'"
+          >
+            <MapPin class="w-3 h-3" />
+            <span>{{ isPickingOrigin ? 'Кликните на карту...' : 'Выбрать на карте' }}</span>
+          </button>
+        </div>
+
+        <div class="border-t border-slate-800/50 my-0.5"></div>
+
+        <!-- Куда -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0 shadow-sm shadow-rose-500"></span>
+            <span class="text-slate-400 shrink-0">Куда:</span>
+            <span class="text-slate-100 font-semibold truncate">{{ targetPoiTitle || 'Точка назначения' }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- Подсказка / Шаг навигации -->
