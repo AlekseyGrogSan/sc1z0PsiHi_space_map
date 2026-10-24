@@ -34,6 +34,7 @@ export interface Space {
   slug: string
   title: string
   description: string
+  is_published?: boolean
   floors: Floor[]
   pois: POI[]
 }

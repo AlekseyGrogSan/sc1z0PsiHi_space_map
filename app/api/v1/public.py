@@ -1,10 +1,11 @@
 import uuid
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user_optional, get_db
 from app.models.poi import POI
+from app.models.user import SystemRole, User
 from app.repositories.poi_repository import poi_photo_repo, poi_repo
 from app.repositories.space_repository import space_repo
 from app.schemas.public import (
@@ -25,16 +26,34 @@ async def get_public_space_bundle(
     slug: str,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[Optional[User], Depends(get_current_user_optional)] = None,
 ) -> PublicSpaceBundleRead:
     space = await space_repo.get_public_bundle_by_slug(db, slug)
-    if not space or not space.is_published:
+    if not space:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Public space not found or not published",
+            detail="Public space not found",
         )
 
-    # Set aggressive caching header for mobile clients / CDN
-    response.headers["Cache-Control"] = "public, max-age=60"
+    # Если пространство еще не опубликовано, разрешаем просмотр только создателю/участникам или суперадмину
+    if not space.is_published:
+        is_allowed = False
+        if current_user:
+            if current_user.system_role == SystemRole.SUPERADMIN:
+                is_allowed = True
+            else:
+                member = await space_repo.get_member(db, space.id, current_user.id)
+                if member:
+                    is_allowed = True
+        if not is_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Public space not found or not published",
+            )
+
+    # Set aggressive caching header only for published spaces
+    if space.is_published:
+        response.headers["Cache-Control"] = "public, max-age=60"
 
     return PublicSpaceBundleRead.model_validate(space)
 

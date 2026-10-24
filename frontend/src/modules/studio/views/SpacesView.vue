@@ -118,7 +118,7 @@ onMounted(fetchSpaces)
     </div>
 
     <!-- Spaces grid -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
       <SpaceCard
         v-for="space in spaces"
         :key="space.id"

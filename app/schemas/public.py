@@ -26,12 +26,22 @@ class PublicPOIRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    floor_id: uuid.UUID
     title: str
     category: str
     description: Optional[str] = None
     x_coord: float
     y_coord: float
+    panorama_id: Optional[uuid.UUID] = None
     photos: List[PublicPOIPhotoRead] = Field(default_factory=list)
+
+    @computed_field
+    def x(self) -> float:
+        return self.x_coord
+
+    @computed_field
+    def y(self) -> float:
+        return self.y_coord
 
 
 class PublicFloorRead(BaseModel):
@@ -45,6 +55,7 @@ class PublicFloorRead(BaseModel):
     width_px: Optional[int] = Field(None, exclude=True)
     height_px: Optional[int] = Field(None, exclude=True)
     ppm: Optional[float] = None
+    pois: List[PublicPOIRead] = Field(default_factory=list)
 
     @computed_field
     def width(self) -> Optional[int]:
@@ -79,12 +90,20 @@ class PublicSpaceBundleRead(BaseModel):
     title: str
     slug: str
     description: Optional[str] = None
+    is_published: bool = True
     floors: List[PublicFloorRead] = []
     categories: List[str] = Field(
-        default=["stand", "wifi", "info", "food", "wc"],
+        default=["stand", "wifi", "info", "food", "wc", "stage", "entrance"],
         description="Категории точек интереса",
     )
     settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @computed_field
+    def pois(self) -> List[PublicPOIRead]:
+        all_pois: List[PublicPOIRead] = []
+        for f in self.floors:
+            all_pois.extend(f.pois)
+        return all_pois
 
 
 class PublicPOIPhotosResponse(BaseModel):

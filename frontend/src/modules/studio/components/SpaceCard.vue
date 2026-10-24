@@ -12,17 +12,23 @@ const qrDataUrl = ref('')
 const showQr = ref(false)
 const publicUrl = computed(() => `${window.location.origin}/space/${props.space.slug}`)
 
-async function generateQr() {
-  try {
-    qrDataUrl.value = await QRCode.toDataURL(publicUrl.value, {
-      width: 200,
-      margin: 1,
-      color: { dark: '#f1f5f9', light: '#0f172a' },
-    })
-    showQr.value = true
-  } catch (e) {
-    console.error(e)
+async function toggleQr() {
+  if (showQr.value) {
+    showQr.value = false
+    return
   }
+  if (!qrDataUrl.value) {
+    try {
+      qrDataUrl.value = await QRCode.toDataURL(publicUrl.value, {
+        width: 200,
+        margin: 1,
+        color: { dark: '#f1f5f9', light: '#0f172a' },
+      })
+    } catch (e) {
+      console.error(e)
+    }
+  }
+  showQr.value = true
 }
 
 const badgeClass = computed(() =>
@@ -49,8 +55,14 @@ const badgeLabel = computed(() =>
       </div>
 
       <!-- Actions -->
-      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button :id="`space-qr-${space.id}`" @click="generateQr" class="btn btn-ghost p-2 text-xs" title="QR-код">
+      <div class="flex items-center gap-1 transition-opacity" :class="showQr ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'">
+        <button
+          :id="`space-qr-${space.id}`"
+          @click="toggleQr"
+          class="btn p-2 text-xs transition-colors"
+          :class="showQr ? 'bg-blue-600 text-white hover:bg-blue-500' : 'btn-ghost'"
+          :title="showQr ? 'Скрыть QR' : 'QR-код'"
+        >
           <QrCode :size="15" />
         </button>
         <button :id="`space-delete-${space.id}`" @click="$emit('delete')" class="btn btn-ghost p-2 text-xs hover:text-red-400" title="Удалить">
@@ -63,14 +75,16 @@ const badgeLabel = computed(() =>
     <p v-if="space.description" class="text-sm line-clamp-2" style="color: var(--text-secondary)">{{ space.description }}</p>
 
     <!-- QR panel -->
-    <div v-if="showQr" class="flex flex-col items-center gap-3 p-4 rounded-xl" style="background: var(--bg-surface)">
-      <img :src="qrDataUrl" alt="QR code" class="rounded-lg" style="width:140px;height:140px" />
-      <p class="text-xs text-center break-all" style="color: var(--text-muted)">{{ publicUrl }}</p>
-      <a :href="publicUrl" target="_blank" class="btn btn-ghost text-xs py-1 px-3 gap-1">
-        <ExternalLink :size="12" />
-        Открыть
-      </a>
-      <button @click="showQr = false" class="text-xs" style="color: var(--text-muted)">Скрыть</button>
+    <div v-if="showQr" class="flex flex-col items-center gap-3 p-4 rounded-xl fade-in" style="background: var(--bg-surface)">
+      <img :src="qrDataUrl" alt="QR code" class="rounded-lg shadow" style="width:140px;height:140px" />
+      <p class="text-xs text-center break-all select-all font-mono" style="color: var(--text-muted)">{{ publicUrl }}</p>
+      <div class="flex items-center gap-2">
+        <a :href="publicUrl" target="_blank" class="btn btn-primary text-xs py-1.5 px-3 gap-1">
+          <ExternalLink :size="12" />
+          Открыть
+        </a>
+        <button @click="showQr = false" class="btn btn-ghost text-xs py-1.5 px-2.5" style="color: var(--text-muted)">Скрыть</button>
+      </div>
     </div>
 
     <hr class="divider" />

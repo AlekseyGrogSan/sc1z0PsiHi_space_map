@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loader2, AlertCircle } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Layers } from 'lucide-vue-next'
 import { getSpaceBySlug, getRoute } from '../api'
 import type { Space, Floor, POI, PoiCategory, RouteResponse, RoutePoint } from '../types'
 import ViewerMap from '../components/ViewerMap.vue'
@@ -213,6 +213,14 @@ watch(
 
     <!-- Основной рабочий экран -->
     <template v-else-if="space && activeFloor">
+      <!-- Баннер предпросмотра черновика -->
+      <div
+        v-if="space.is_published === false"
+        class="absolute top-0 left-0 right-0 z-30 bg-amber-500/90 backdrop-blur-md text-amber-950 px-4 py-1.5 text-center text-xs font-semibold shadow-md flex items-center justify-center gap-2"
+      >
+        <span>⚠️ Режим предпросмотра: пространство не опубликовано (черновик)</span>
+      </div>
+
       <!-- Карта Leaflet (фоновый интерактивный слой) -->
       <div class="absolute inset-0 z-0">
         <ViewerMap
@@ -226,7 +234,10 @@ watch(
       </div>
 
       <!-- ВЕРХНИЙ ОВЕРЛЕЙ: Поиск и чипсы категорий -->
-      <header class="absolute top-0 left-0 right-0 z-20 p-3 sm:p-4 max-w-2xl mx-auto pointer-events-none">
+      <header
+        class="absolute left-0 right-0 z-20 p-3 sm:p-4 max-w-2xl mx-auto pointer-events-none"
+        :class="space.is_published === false ? 'top-8' : 'top-0'"
+      >
         <ViewerSearch
           v-model="searchQuery"
           v-model:selected-category="selectedCategory"
@@ -236,7 +247,10 @@ watch(
       </header>
 
       <!-- ПРАВЫЙ ОВЕРЛЕЙ: Плавающий переключатель этажей -->
-      <div class="absolute right-3 sm:right-5 top-28 z-20 pointer-events-none">
+      <div
+        class="absolute right-3 sm:right-5 z-20 pointer-events-none"
+        :class="space.is_published === false ? 'top-36' : 'top-28'"
+      >
         <FloorSelector
           :floors="space.floors"
           :active-floor-id="activeFloor.id"
@@ -273,5 +287,27 @@ watch(
         @close="handleClosePanorama"
       />
     </template>
+
+    <!-- Состояние: в пространстве еще нет этажей с планами -->
+    <div
+      v-else-if="space"
+      class="absolute inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-6 text-center gap-4 text-slate-100"
+    >
+      <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-2">
+        <Layers class="w-8 h-8 text-blue-500" />
+      </div>
+      <div class="max-w-md">
+        <h2 class="text-xl font-bold text-white">{{ space.title }}</h2>
+        <p class="text-sm text-slate-400 mt-2">
+          В этом пространстве пока нет планов этажей. Загрузите чертеж или схему в студии управления.
+        </p>
+      </div>
+      <router-link
+        to="/admin/spaces"
+        class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all"
+      >
+        Перейти в управление пространствами
+      </router-link>
+    </div>
   </main>
 </template>

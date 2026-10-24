@@ -98,25 +98,36 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
       : mockFloors
 
     // Приведение точек интереса
-    const pois: POI[] = Array.isArray(data.pois) && data.pois.length > 0
-      ? data.pois.map((p: any) => ({
+    let rawPois: any[] = Array.isArray(data.pois) && data.pois.length > 0 ? data.pois : []
+    if (rawPois.length === 0 && Array.isArray(data.floors)) {
+      rawPois = data.floors.flatMap((f: any) => f.pois || [])
+    }
+
+    const pois: POI[] = rawPois.length > 0
+      ? rawPois.map((p: any) => ({
           id: String(p.id),
           floor_id: String(p.floor_id),
           title: p.title,
           category: p.category || 'stand',
           description: p.description || '',
-          x: Number(p.x),
-          y: Number(p.y),
+          x: Number(p.x ?? p.x_coord ?? 0),
+          y: Number(p.y ?? p.y_coord ?? 0),
           logo_url: p.logo_url ?? null,
           panorama_id: p.panorama_id ?? null,
         }))
-      : mockPois
+      : (floors.length > 0
+          ? mockPois.map((p, idx) => ({
+              ...p,
+              floor_id: floors[idx % floors.length].id,
+            }))
+          : mockPois)
 
     return {
       id: String(data.id || mockSpace.id),
       slug: data.slug || slug,
       title: data.title || mockSpace.title,
       description: data.description || mockSpace.description,
+      is_published: data.is_published ?? true,
       floors,
       pois,
     }

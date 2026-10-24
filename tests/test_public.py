@@ -67,3 +67,47 @@ async def test_public_space_bundle_when_published(client: AsyncClient, auth_head
 
     # Check Cache-Control header
     assert "public, max-age=60" in public_resp.headers.get("cache-control", "")
+
+
+@pytest.mark.asyncio
+async def test_public_space_preview_by_member_when_unpublished(client: AsyncClient, auth_headers: dict):
+    # 1. Create space (unpublished)
+    create_resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Черновик выставки", "slug": "draft-expo"},
+    )
+    space_id = create_resp.json()["id"]
+
+    # 2. Add floor
+    floor_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/floors",
+        headers=auth_headers,
+        json={"floor_number": 1, "title": "1 этаж", "ppm": 20.0},
+    )
+    floor_id = floor_resp.json()["id"]
+
+    # 3. Add POI
+    await client.post(
+        f"/api/v1/floors/{floor_id}/pois",
+        headers=auth_headers,
+        json={"title": "Главный стенд", "category": "stand", "x_coord": 500.0, "y_coord": 400.0},
+    )
+
+    # 4. Anonymous request gets 404
+    anon_resp = await client.get("/api/v1/public/spaces/draft-expo")
+    assert anon_resp.status_code == 404
+
+    # 5. Authenticated member gets 200 with bundle and POIs
+    member_resp = await client.get("/api/v1/public/spaces/draft-expo", headers=auth_headers)
+    assert member_resp.status_code == 200
+    bundle = member_resp.json()
+    assert bundle["title"] == "Черновик выставки"
+    assert bundle["is_published"] is False
+    assert len(bundle["floors"]) == 1
+    assert len(bundle["pois"]) == 1
+    assert bundle["pois"][0]["title"] == "Главный стенд"
+    assert bundle["pois"][0]["x"] == 500.0
+    assert bundle["pois"][0]["y"] == 400.0
+    assert len(bundle["floors"][0]["pois"]) == 1
+

@@ -88,6 +88,12 @@ function createMarkerHtml(poi: POI, isSelected: boolean): string {
   `
 }
 
+function handleResize() {
+  if (map) {
+    map.invalidateSize()
+  }
+}
+
 function initMap() {
   if (!mapContainer.value) return
 
@@ -107,6 +113,19 @@ function initMap() {
   renderFloorPlan()
   renderMarkers()
   renderRoute()
+
+  window.addEventListener('resize', handleResize)
+
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize()
+      const bounds: L.LatLngBoundsExpression = [
+        [0, 0],
+        [props.floor.height, props.floor.width],
+      ]
+      map.fitBounds(bounds, { animate: false, padding: [20, 20] })
+    }
+  }, 150)
 }
 
 function renderFloorPlan() {
@@ -124,6 +143,12 @@ function renderFloorPlan() {
 
   currentOverlay = L.imageOverlay(props.floor.plan_image_url, bounds).addTo(map)
   map.fitBounds(bounds, { animate: true, padding: [20, 20] })
+
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize()
+    }
+  }, 100)
 }
 
 function renderMarkers() {
@@ -242,6 +267,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
   if (map) {
     map.remove()
     map = null

@@ -5,13 +5,19 @@ const routes: RouteRecordRaw[] = [
     path: '/login',
     name: 'Login',
     component: () => import('../modules/studio/views/LoginView.vue'),
-    meta: { public: true },
+    meta: { guestOnly: true },
   },
   {
     path: '/register',
     name: 'Register',
     component: () => import('../modules/studio/views/RegisterView.vue'),
-    meta: { public: true },
+    meta: { guestOnly: true },
+  },
+  {
+    path: '/space/:slug',
+    name: 'SpaceView',
+    component: () => import('../modules/viewer/views/SpaceView.vue'),
+    props: true,
   },
   {
     path: '/admin',
@@ -39,6 +45,10 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     redirect: '/admin',
   },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/admin',
+  },
 ]
 
 const router = createRouter({
@@ -50,7 +60,7 @@ router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('access_token')
   if (to.meta.requiresAuth && !token) {
     next('/login')
-  } else if (to.meta.public && token) {
+  } else if (to.meta.guestOnly && token) {
     next('/admin')
   } else {
     next()
