@@ -1,26 +1,41 @@
-import axios, { type InternalAxiosRequestConfig, type AxiosResponse, AxiosError } from 'axios'
+import axios, { 
+  type AxiosInstance, 
+  type InternalAxiosRequestConfig, 
+  type AxiosResponse, 
+  type AxiosError 
+} from 'axios'
 
-const BASE_URL = 'http://localhost:8000/api/v1'
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
-const client = axios.create({
+const apiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  timeout: 8000,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  },
 })
 
-// Inject JWT token from localStorage
-client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+// Перехватчик запросов: добавление JWT токена
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('access_token')
-  if (token) {
+  if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// 401 → redirect to login
-client.interceptors.response.use(
-  (res: AxiosResponse) => res,
+// Перехватчик ответов: логирование и обработка 401 (редирект на логин)
+apiClient.interceptors.response.use(
+  (response: AxiosResponse) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    const url = error.config?.url
+    const message = (error.response?.data as { detail?: string })?.detail || error.message || 'Ошибка сети'
+
+    console.warn(`[API Error ${status || 'TIMEOUT/NETWORK'}] ${url}: ${message}`)
+    
+    if (status === 401) {
       localStorage.removeItem('access_token')
       window.location.href = '/login'
     }
@@ -28,4 +43,4 @@ client.interceptors.response.use(
   }
 )
 
-export default client
+export default apiClient

@@ -1,4 +1,6 @@
 import client from './client'
+
+export { default } from './client'
 export { panoramaApi } from './panoramaApi'
 
 // Auth
