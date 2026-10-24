@@ -1,6 +1,8 @@
+import io
 import uuid
 import pytest
 from httpx import AsyncClient
+from PIL import Image
 from unittest.mock import AsyncMock, patch
 
 from app.services.s3 import s3_service
@@ -14,6 +16,10 @@ def mock_s3():
     ), patch.object(
         s3_service,
         "delete_object",
+        AsyncMock(return_value=None),
+    ), patch.object(
+        s3_service,
+        "put_bytes",
         AsyncMock(return_value=None),
     ):
         yield
@@ -39,6 +45,57 @@ async def test_floor_plan_upload_and_confirm(client: AsyncClient, mock_s3):
     )
     assert confirm_resp.status_code == 200
     assert confirm_resp.json()["status"] == "processing"
+
+@pytest.mark.asyncio
+async def test_direct_floor_plan_upload_png_and_pdf(client: AsyncClient, organizer_user, auth_headers, mock_s3):
+    # 1. Создаем тестовое пространство
+    space_resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Экспохолл", "slug": "expo-hall"},
+    )
+    assert space_resp.status_code == 201
+    space_id = space_resp.json()["id"]
+
+    # 2. Создаем этаж
+    floor_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/floors",
+        headers=auth_headers,
+        json={"floor_number": 1, "title": "1 этаж"},
+    )
+    assert floor_resp.status_code == 201
+    floor_id = floor_resp.json()["id"]
+
+    # 3. Загружаем PNG-план с масштабом PPM
+    png_buf = io.BytesIO()
+    Image.new("RGB", (800, 600), color="white").save(png_buf, format="PNG")
+    png_bytes = png_buf.getvalue()
+
+    upload_png_resp = await client.post(
+        f"/api/v1/media/floors/{floor_id}/plan/upload?ppm=25.0",
+        files={"file": ("floor1.png", png_bytes, "image/png")},
+    )
+    assert upload_png_resp.status_code == 200
+    png_data = upload_png_resp.json()
+    assert png_data["width_px"] == 800
+    assert png_data["height_px"] == 600
+    assert png_data["ppm"] == 25.0
+    assert "optimized.webp" in png_data["plan_url"]
+
+    # 4. Загружаем PDF-план
+    pdf_buf = io.BytesIO()
+    Image.new("RGB", (1000, 750), color="blue").save(pdf_buf, format="PDF")
+    pdf_bytes = pdf_buf.getvalue()
+
+    upload_pdf_resp = await client.post(
+        f"/api/v1/media/floors/{floor_id}/plan/upload",
+        files={"file": ("blueprint.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert upload_pdf_resp.status_code == 200
+    pdf_data = upload_pdf_resp.json()
+    assert pdf_data["width_px"] > 0
+    assert pdf_data["height_px"] > 0
+    assert "optimized.webp" in pdf_data["plan_url"]
 
 @pytest.mark.asyncio
 async def test_panorama_lifecycle_and_hotspots(client: AsyncClient, mock_s3):

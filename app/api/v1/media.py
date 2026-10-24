@@ -1,11 +1,13 @@
 import os
 import uuid
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.repositories.floor_repository import floor_repo
+from app.schemas.floor import FloorRead, FloorUpdate
 from app.schemas.media import (
     FloorPlanConfirmRequest,
     MediaProcessStatusResponse,
@@ -18,17 +20,17 @@ from app.services.s3 import s3_service
 router = APIRouter(prefix="/media", tags=["Media & Plans"])
 
 async def _process_floor_plan_task(floor_id: uuid.UUID, staging_key: str):
-    """Фоновая обработка плана этажа: конвертация в WebP, превью и замер размеров."""
+    """Фоновая обработка плана этажа: конвертация из PNG/JPG/PDF в WebP, превью и замер размеров."""
     try:
         # Скачиваем сырой чертеж из staging
         raw_bytes = await s3_service.get_bytes(settings.S3_BUCKET_STAGING, staging_key)
         
-        # Получаем пропорции
-        width, height = image_service.inspect_dimensions(raw_bytes)
+        # Рендерим в растровый формат (если был PDF или картинка)
+        raster_bytes, width, height = image_service.render_plan_to_bytes(raw_bytes, staging_key)
         
         # Генерируем оптимизированный WebP (до 2048px) и миниатюру
-        optimized_webp = image_service.generate_optimized_floor_plan(raw_bytes)
-        thumb_webp = image_service.generate_thumbnail_webp(raw_bytes)
+        optimized_webp = image_service.generate_optimized_floor_plan(raster_bytes)
+        thumb_webp = image_service.generate_thumbnail_webp(raster_bytes)
 
         # Ключи для публичного бакета
         dest_opt_key = f"floors/{floor_id}/plan/optimized.webp"
@@ -39,9 +41,87 @@ async def _process_floor_plan_task(floor_id: uuid.UUID, staging_key: str):
 
         # Удаляем временный файл из staging
         await s3_service.delete_object(settings.S3_BUCKET_STAGING, staging_key)
+
+        # Обновляем метаданные этажа в БД
+        try:
+            from app.core.database import async_session_factory
+            async with async_session_factory() as db:
+                floor = await floor_repo.get_by_id(db, floor_id)
+                if floor:
+                    await floor_repo.update(
+                        db,
+                        floor,
+                        FloorUpdate(
+                            plan_original_key=dest_opt_key,
+                            plan_optimized_key=dest_opt_key,
+                            width_px=width,
+                            height_px=height,
+                        ),
+                    )
+                    await db.commit()
+        except Exception as db_err:
+            print(f"Notice: floor record update skipped in background: {db_err}")
     except Exception as e:
         # Логируем ошибку фоновой обработки
         print(f"Error processing floor plan {floor_id}: {e}")
+
+@router.post(
+    "/floors/{floor_id}/plan/upload",
+    response_model=FloorRead,
+    summary="Загрузка готового файла плана этажа (PNG, JPG, WebP, PDF)",
+)
+async def upload_floor_plan(
+    floor_id: uuid.UUID,
+    file: UploadFile = File(..., description="Файл готового чертежа (PNG, JPG, WebP, PDF)"),
+    ppm: Optional[float] = None,
+    page_index: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Прямая загрузка готового плана этажа через Swagger UI или веб-форму.
+    Поддерживает чертежи в растровых форматах (PNG, JPG, WebP), а также PDF-экспликации/чертежи БТИ.
+    Автоматически оптимизирует чертеж в WebP, сохраняет в MinIO S3 и привязывает к этажу.
+    """
+    floor = await floor_repo.get_by_id(db, floor_id)
+    if not floor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Этаж не найден")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Загруженный файл пустой")
+
+    filename = file.filename or "plan.png"
+
+    try:
+        raster_bytes, width, height = image_service.render_plan_to_bytes(
+            raw_bytes, filename=filename, page_index=page_index
+        )
+        optimized_webp = image_service.generate_optimized_floor_plan(raster_bytes)
+        thumb_webp = image_service.generate_thumbnail_webp(raster_bytes)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Не удалось обработать план: {str(e)}",
+        )
+
+    dest_opt_key = f"floors/{floor_id}/plan/optimized.webp"
+    dest_thumb_key = f"floors/{floor_id}/plan/thumb.webp"
+
+    await s3_service.put_bytes(settings.S3_BUCKET_PUBLIC, dest_opt_key, optimized_webp, "image/webp")
+    await s3_service.put_bytes(settings.S3_BUCKET_PUBLIC, dest_thumb_key, thumb_webp, "image/webp")
+
+    update_data = FloorUpdate(
+        plan_original_key=dest_opt_key,
+        plan_optimized_key=dest_opt_key,
+        width_px=width,
+        height_px=height,
+    )
+    if ppm is not None and ppm > 0:
+        update_data.ppm = ppm
+
+    updated_floor = await floor_repo.update(db, floor, update_data)
+    await db.commit()
+    return FloorRead.model_validate(updated_floor)
 
 @router.post("/floors/{floor_id}/plan/upload-url", response_model=PresignedUploadResponse)
 async def get_floor_plan_upload_url(

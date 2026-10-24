@@ -17,6 +17,12 @@ try:
 except ImportError:
     HAS_OPENCV = False
 
+try:
+    import pypdfium2 as pdfium
+    HAS_PDFIUM = True
+except ImportError:
+    HAS_PDFIUM = False
+
 logger = logging.getLogger(__name__)
 
 class ImageProcessingService:
@@ -25,6 +31,32 @@ class ImageProcessingService:
         """Возвращает (width, height) изображения."""
         with Image.open(io.BytesIO(image_bytes)) as img:
             return img.width, img.height
+
+    @staticmethod
+    def render_plan_to_bytes(file_bytes: bytes, filename: str = "", page_index: int = 0) -> Tuple[bytes, int, int]:
+        """
+        Преобразует входной файл (PNG, JPG, WebP или PDF) в растровые байты RGB и возвращает (bytes, width, height).
+        Для PDF рендерит указанную страницу (по умолчанию 0) в высоком разрешении.
+        """
+        if filename.lower().endswith(".pdf") or file_bytes.startswith(b"%PDF"):
+            if not HAS_PDFIUM:
+                raise ValueError("Поддержка PDF не активна: библиотека pypdfium2 не установлена")
+            pdf = pdfium.PdfDocument(file_bytes)
+            if page_index >= len(pdf):
+                raise ValueError(f"Страница {page_index + 1} не найдена в PDF документе (всего страниц: {len(pdf)})")
+            page = pdf[page_index]
+            # scale=2.5 обеспечивает отличную детализацию чертежа (~2400x1500 px для стандартного A4/A3)
+            pil_image = page.render(scale=2.5).to_pil().convert("RGB")
+            out = io.BytesIO()
+            pil_image.save(out, format="PNG")
+            png_bytes = out.getvalue()
+            return png_bytes, pil_image.width, pil_image.height
+
+        with Image.open(io.BytesIO(file_bytes)) as img:
+            rgb_img = img.convert("RGB")
+            out = io.BytesIO()
+            rgb_img.save(out, format="PNG")
+            return out.getvalue(), rgb_img.width, rgb_img.height
 
     @staticmethod
     def compute_blurhash(image_bytes: bytes, x_components: int = 4, y_components: int = 3) -> str:
