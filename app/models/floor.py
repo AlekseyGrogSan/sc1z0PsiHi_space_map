@@ -7,6 +7,7 @@ from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.navigation import NavNode
     from app.models.poi import POI
     from app.models.space import Space
 
@@ -43,4 +44,9 @@ class Floor(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         back_populates="floor",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+    nav_nodes: Mapped[List["NavNode"]] = relationship(
+        "NavNode",
+        back_populates="floor",
+        cascade="all, delete-orphan",
     )
