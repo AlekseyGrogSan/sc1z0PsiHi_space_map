@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
+from app.core.config import settings
 from app.models.poi import POICategory
 
 
@@ -62,3 +63,62 @@ class POIRead(BaseModel):
     yaw_in_panorama: Optional[float] = None
     pitch_in_panorama: Optional[float] = None
     created_at: datetime
+
+
+# ============================================================================
+# POI Photo Gallery Schemas
+# ============================================================================
+
+
+class POIPhotoUploadResponse(BaseModel):
+    """Ответ с Presigned S3 PUT URL для загрузки фотографии POI."""
+
+    upload_url: str = Field(..., description="Presigned S3 PUT URL для прямой загрузки")
+    storage_key: str = Field(..., description="Относительный S3-ключ файла")
+    expires_in_seconds: int = Field(default=900, description="Срок жизни ссылки в секундах")
+
+
+class POIPhotoConfirmRequest(BaseModel):
+    """Подтверждение успешной загрузки фотографии POI в MinIO."""
+
+    storage_key: str = Field(..., description="S3-ключ загруженного файла")
+
+
+class POIPhotoRead(BaseModel):
+    """Схема фотографии POI (с вычисленным полным URL)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    poi_id: uuid.UUID
+    storage_key: str
+    sort_order: int
+    created_at: datetime
+
+    @computed_field
+    def url(self) -> str:
+        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.storage_key}"
+
+
+class POIPhotoReorderRequest(BaseModel):
+    """Изменение порядка фотографий в галерее: список photo_ids в новом порядке."""
+
+    photo_ids: List[uuid.UUID] = Field(
+        ...,
+        min_length=1,
+        description="Список ID фотографий в желаемом порядке (слева направо)",
+    )
+
+
+class POIPhotoDeleteResponse(BaseModel):
+    """Ответ после удаления фотографии."""
+
+    success: bool = True
+    message: str = "Photo deleted successfully"
+
+
+class POIPhotoListResponse(BaseModel):
+    """Список фотографий POI (организаторский эндпоинт)."""
+
+    poi_id: uuid.UUID
+    photos: List[POIPhotoRead] = []

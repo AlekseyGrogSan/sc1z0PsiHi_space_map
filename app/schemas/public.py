@@ -1,8 +1,37 @@
 from typing import Any, Dict, List, Optional
 import uuid
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.core.config import settings
+
+
+class PublicPOIPhotoRead(BaseModel):
+    """Публичная схема фотографии POI (только URL и порядок)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    sort_order: int
+    storage_key: str = Field(exclude=True)
+
+    @computed_field
+    def url(self) -> str:
+        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.storage_key}"
+
+
+class PublicPOIRead(BaseModel):
+    """Публичная схема точки интереса (лёгкая, для мобильного клиента)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    category: str
+    description: Optional[str] = None
+    x_coord: float
+    y_coord: float
+    photos: List[PublicPOIPhotoRead] = Field(default_factory=list)
 
 
 class PublicFloorRead(BaseModel):
@@ -56,3 +85,11 @@ class PublicSpaceBundleRead(BaseModel):
         description="Категории точек интереса",
     )
     settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PublicPOIPhotosResponse(BaseModel):
+    """Ответ публичного эндпоинта для получения фотографий POI."""
+
+    poi_id: uuid.UUID
+    poi_title: str
+    photos: List[PublicPOIPhotoRead] = Field(default_factory=list)

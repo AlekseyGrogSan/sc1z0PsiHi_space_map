@@ -1,11 +1,15 @@
 import enum
 import uuid
-from typing import Optional
-from sqlalchemy import Enum, Float, ForeignKey, String, Text, Uuid
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import Enum, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.floor import Floor
 
 
 class POICategory(str, enum.Enum):
@@ -65,3 +69,47 @@ class POI(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Углы маркера внутри 360-панорамы: yaw (-180..180), pitch (-90..90)
     yaw_in_panorama: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pitch_in_panorama: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Связь с этажом (для eager loading в публичном бандле)
+    floor: Mapped["Floor"] = relationship("Floor", back_populates="pois")
+
+    # Фотогалерея POI (упорядоченный набор фотографий)
+    photos: Mapped[List["POIPhoto"]] = relationship(
+        "POIPhoto",
+        back_populates="poi",
+        cascade="all, delete-orphan",
+        order_by="POIPhoto.sort_order",
+        lazy="selectin",
+    )
+
+
+class POIPhoto(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Фотография в галерее точки интереса (POI).
+
+    Хранит только относительный S3-ключ; полный URL формируется
+    на уровне Pydantic-схемы через computed_field.
+    """
+
+    __tablename__ = "poi_photos"
+
+    poi_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("pois.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    storage_key: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        comment="Относительный S3-ключ (без хоста)",
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Порядковый номер в галерее (0, 1, 2...)",
+    )
+
+    poi: Mapped["POI"] = relationship("POI", back_populates="photos")
+
