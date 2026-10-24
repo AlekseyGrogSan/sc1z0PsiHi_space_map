@@ -44,7 +44,7 @@ const badgeLabel = computed(() =>
             {{ badgeLabel }}
           </span>
         </div>
-        <h3 class="font-semibold text-base leading-tight truncate" style="color: var(--text-primary)">{{ space.name }}</h3>
+        <h3 class="font-semibold text-base leading-tight truncate" style="color: var(--text-primary)">{{ space.title || space.name }}</h3>
         <p class="text-xs mt-0.5 font-mono truncate" style="color: var(--text-muted)">{{ space.slug }}</p>
       </div>
 

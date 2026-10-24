@@ -129,7 +129,12 @@ async function handleBuildRoute(targetPoi: POI) {
   }
 
   try {
-    const routeData = await getRoute({ origin, destination })
+    const routeData = await getRoute({
+      origin,
+      destination,
+      spaceId: space.value?.id,
+      to_poi_id: targetPoi.id,
+    })
     activeRoute.value = routeData
     isRouting.value = true
     // Скрываем BottomSheet POI, чтобы показать информативную плашку маршрута

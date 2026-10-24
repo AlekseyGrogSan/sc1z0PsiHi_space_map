@@ -133,14 +133,28 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
 }
 
 /**
- * Построение маршрута (POST /navigation/route)
+ * Построение маршрута (POST /spaces/{space_id}/navigation/route)
  * С фоллбеком на тестовую прямую линию при ошибке/отсутствии бэка.
  */
 export async function getRoute(body: {
   origin: RoutePoint
   destination: RoutePoint
+  spaceId?: string
+  to_poi_id?: string
 }): Promise<RouteResponse> {
   try {
+    if (body.spaceId && (body.to_poi_id || (body.destination as any)?.id)) {
+      const payload = {
+        floor_id: body.origin.floor_id,
+        x: body.origin.x,
+        y: body.origin.y,
+        to_poi_id: body.to_poi_id || (body.destination as any)?.id,
+      }
+      const { data } = await apiClient.post<RouteResponse>(`/spaces/${body.spaceId}/navigation/route`, payload)
+      if (data && Array.isArray(data.points) && data.points.length > 0) {
+        return data
+      }
+    }
     const { data } = await apiClient.post<RouteResponse>('/navigation/route', body)
     if (data && Array.isArray(data.points) && data.points.length > 0) {
       return data

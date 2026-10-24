@@ -53,17 +53,20 @@ function handleOpenEditor(space) {
 
 async function openEditorForSpace(space) {
   try {
-    const { data } = await floorsApi.list(space.id)
-    const floors = Array.isArray(data) ? data : (data.items || [])
+    let floors = space.floors
+    if (!floors || floors.length === 0) {
+      const { data } = await floorsApi.list(space.id)
+      floors = Array.isArray(data) ? data : (data.items || [])
+    }
     if (floors.length > 0) {
       router.push(`/admin/spaces/${space.id}/floors/${floors[0].id}/editor`)
     } else {
       // Create first floor automatically
-      const { data: floor } = await floorsApi.create(space.id, { name: 'Этаж 1', level: 1 })
+      const { data: floor } = await floorsApi.create(space.id, { title: '1 этаж', floor_number: 1 })
       router.push(`/admin/spaces/${space.id}/floors/${floor.id}/editor`)
     }
   } catch (e) {
-    console.error(e)
+    console.error('Ошибка открытия редактора пространства:', e)
   }
 }
 

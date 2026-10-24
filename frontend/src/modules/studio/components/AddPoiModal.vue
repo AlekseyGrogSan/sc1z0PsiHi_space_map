@@ -10,13 +10,11 @@ const props = defineProps({
 const emit = defineEmits(['close', 'created'])
 
 const CATEGORIES = [
-  { value: 'stand',    label: '🏢 Стенд' },
-  { value: 'cafe',     label: '☕ Кафе / Еда' },
-  { value: 'toilet',   label: '🚻 Туалет' },
-  { value: 'wifi',     label: '📶 Wi-Fi' },
-  { value: 'stage',    label: '🎤 Сцена' },
-  { value: 'entrance', label: '🚪 Вход / Выход' },
-  { value: 'other',    label: '📍 Другое' },
+  { value: 'stand', label: '🏢 Стенд' },
+  { value: 'food',  label: '☕ Кафе / Еда' },
+  { value: 'wc',    label: '🚻 Туалет' },
+  { value: 'wifi',  label: '📶 Wi-Fi' },
+  { value: 'info',  label: 'ℹ️ Инфо / Стойка' },
 ]
 
 const form = reactive({
@@ -33,7 +31,7 @@ async function handleCreate() {
   error.value = ''
   try {
     await poisApi.create(props.floorId, {
-      name: form.name,
+      title: form.name,
       category: form.category,
       description: form.description,
       x_coord: props.coords.x,
