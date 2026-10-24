@@ -4,6 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy.orm import joinedload
+
+from app.models.floor import Floor
+from app.models.poi import POI, POIPhoto
 from app.models.space import Space, SpaceMember, SpaceRole
 from app.schemas.space import SpaceCreate, SpaceUpdate
 
@@ -58,6 +62,27 @@ class SpaceRepository:
             select(Space)
             .where(Space.slug == slug.lower().strip())
             .options(selectinload(Space.floors))
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_public_bundle_by_slug(
+        self,
+        db: AsyncSession,
+        slug: str,
+    ) -> Optional[Space]:
+        """
+        Загружает пространство для публичного просмотра, включая этажи,
+        POI на каждом этаже и фотографии для каждого POI.
+        """
+        stmt = (
+            select(Space)
+            .where(Space.slug == slug.lower().strip())
+            .options(
+                selectinload(Space.floors)
+                .selectinload(Floor.pois)  # type: ignore[attr-defined]
+                .selectinload(POI.photos),  # type: ignore[attr-defined]
+            )
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()

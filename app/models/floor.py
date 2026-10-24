@@ -1,5 +1,5 @@
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -7,6 +7,8 @@ from app.core.database import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.navigation import NavNode
+    from app.models.poi import POI
     from app.models.space import Space
 
 
@@ -37,3 +39,14 @@ class Floor(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # Relationships
     space: Mapped["Space"] = relationship("Space", back_populates="floors")
+    pois: Mapped[List["POI"]] = relationship(
+        "POI",
+        back_populates="floor",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    nav_nodes: Mapped[List["NavNode"]] = relationship(
+        "NavNode",
+        back_populates="floor",
+        cascade="all, delete-orphan",
+    )

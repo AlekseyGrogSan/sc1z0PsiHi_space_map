@@ -23,7 +23,6 @@ class Settings(BaseSettings):
 
     # MinIO / S3 Configuration
     S3_ENDPOINT: str = "http://localhost:9000"
-    S3_ENDPOINT_URL: str = "http://localhost:9000"
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
     S3_REGION: str = "us-east-1"

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class S3Service:
     def __init__(self):
-        self.endpoint_url = settings.S3_ENDPOINT_URL
+        self.endpoint_url = settings.S3_ENDPOINT
         self.access_key = settings.S3_ACCESS_KEY
         self.secret_key = settings.S3_SECRET_KEY
         self.region = settings.S3_REGION
