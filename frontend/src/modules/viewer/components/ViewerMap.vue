@@ -166,7 +166,7 @@ function renderFloorPlan() {
 
   const bounds: L.LatLngBoundsExpression = [
     [0, 0],
-    [props.floor.height, props.floor.width],
+    [props.floor.height || 900, props.floor.width || 1400],
   ]
 
   // Фоновая подложка чертежа (если загружена)
@@ -404,7 +404,11 @@ onBeforeUnmount(() => {
 }
 
 .leaflet-container {
-  background-color: #020617 !important;
+  background-color: #070c18 !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
   font-family: inherit;
 }
 

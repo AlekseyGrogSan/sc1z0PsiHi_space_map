@@ -90,13 +90,13 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
           id: String(f.id || `floor-${idx + 1}`),
           number: typeof f.number === 'number' ? f.number : (f.floor_number ?? (idx + 1)),
           title: f.title || `Этаж ${idx + 1}`,
-          plan_image_url: f.plan_image_url || mockFloors[idx % mockFloors.length]?.plan_image_url || '',
-          width: f.width ?? f.width_px ?? 2000,
-          height: f.height ?? f.height_px ?? 1500,
+          plan_image_url: f.plan_image_url || '',
+          width: f.width ?? f.width_px ?? 1400,
+          height: f.height ?? f.height_px ?? 900,
           ppm: f.ppm ?? 25.0,
           layout_data: f.layout_data || null,
         }))
-      : mockFloors
+      : []
 
     // Приведение точек интереса
     let rawPois: any[] = Array.isArray(data.pois) && data.pois.length > 0 ? data.pois : []
@@ -104,30 +104,23 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
       rawPois = data.floors.flatMap((f: any) => f.pois || [])
     }
 
-    const pois: POI[] = rawPois.length > 0
-      ? rawPois.map((p: any) => ({
-          id: String(p.id),
-          floor_id: String(p.floor_id),
-          title: p.title,
-          category: p.category || 'stand',
-          description: p.description || '',
-          x: Number(p.x ?? p.x_coord ?? 0),
-          y: Number(p.y ?? p.y_coord ?? 0),
-          logo_url: p.logo_url ?? null,
-          panorama_id: p.panorama_id ?? null,
-        }))
-      : (floors.length > 0
-          ? mockPois.map((p, idx) => ({
-              ...p,
-              floor_id: floors[idx % floors.length].id,
-            }))
-          : mockPois)
+    const pois: POI[] = rawPois.map((p: any) => ({
+      id: String(p.id),
+      floor_id: String(p.floor_id),
+      title: p.title,
+      category: p.category || 'stand',
+      description: p.description || '',
+      x: Number(p.x ?? p.x_coord ?? 0),
+      y: Number(p.y ?? p.y_coord ?? 0),
+      logo_url: p.logo_url ?? null,
+      panorama_id: p.panorama_id ?? null,
+    }))
 
     return {
-      id: String(data.id || mockSpace.id),
+      id: String(data.id || ''),
       slug: data.slug || slug,
-      title: data.title || mockSpace.title,
-      description: data.description || mockSpace.description,
+      title: data.title || '',
+      description: data.description || '',
       is_published: data.is_published ?? true,
       floors,
       pois,
