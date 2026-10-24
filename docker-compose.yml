@@ -2,11 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: indoor_nav_postgres
-<<<<<<< HEAD
     restart: unless-stopped
-=======
-    restart: always
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -14,7 +10,6 @@ services:
     ports:
       - "5432:5432"
     volumes:
-<<<<<<< HEAD
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d indoor_nav_db"]
@@ -35,18 +30,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-=======
-      - pgdata:/var/lib/postgresql/data
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)
 
   minio:
     image: minio/minio:latest
     container_name: indoor_nav_minio
-<<<<<<< HEAD
     restart: unless-stopped
-=======
-    restart: always
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -55,10 +43,9 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-<<<<<<< HEAD
       - minio_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 0"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -85,12 +72,17 @@ services:
       dockerfile: Dockerfile
     container_name: indoor_nav_api
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/indoor_nav_db
       - S3_ENDPOINT=http://minio:9000
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET_PUBLIC=spaces-public
+      - S3_BUCKET_STAGING=spaces-staging
+      - S3_PUBLIC_URL_PREFIX=http://localhost:9000/spaces-public
       - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=super-secret-jwt-key-change-in-production-ttk-2026
     ports:
       - "8000:8000"
     volumes:
@@ -108,17 +100,3 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-=======
-      - miniodata:/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: indoor_nav_redis
-    restart: always
-    ports:
-      - "6379:6379"
-
-volumes:
-  pgdata:
-  miniodata:
->>>>>>> d1d319a (feat(media): implement MinIO S3 service, panorama pipeline, cubemap slicer, blurhash, and API routers)
