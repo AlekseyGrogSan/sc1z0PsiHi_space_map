@@ -135,7 +135,7 @@ def _floor_or_error(ctx: _GraphContext, floor_id: uuid.UUID, what: str) -> Floor
     return floor
 
 
-from app.services.auto_graph import find_room_for_point, is_segment_clear, is_segment_walkable
+from app.services.auto_graph import find_room_for_point, is_point_navigable, is_segment_clear, is_segment_walkable
 from app.services.pathfinder import (
     WALKING_SPEED_MPS,
     EdgeProjection,
@@ -149,6 +149,36 @@ from app.services.pathfinder import (
     find_nearest_edge_projection,
     find_nearest_node,
 )
+
+
+def _snap_to_navigable(
+    x: float,
+    y: float,
+    walls: List[Dict[str, float]],
+    circle_obstacles: List[Dict[str, float]],
+    rect_obstacles: List[Dict[str, float]],
+    rooms: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[float, float]:
+    """Если точка лежит внутри препятствия или стены, сдвигает её в ближайшую проходимую зону."""
+    if not (walls or circle_obstacles or rect_obstacles):
+        return x, y
+    if is_point_navigable(x, y, walls, circle_obstacles, rect_obstacles, min_wall_dist=3.0, min_obstacle_dist=3.0):
+        return x, y
+
+    cur_room = find_room_for_point(x, y, rooms or [], tolerance=5.0)
+
+    # Ищем в радиусе до 80px с нарастающим шагом
+    for r in [4.0, 8.0, 14.0, 22.0, 32.0, 45.0, 60.0, 80.0]:
+        for k in range(16):
+            angle = k * (2.0 * math.pi / 16.0)
+            cx = x + r * math.cos(angle)
+            cy = y + r * math.sin(angle)
+            if cur_room and find_room_for_point(cx, cy, rooms or [], tolerance=2.0) != cur_room:
+                continue
+            if is_point_navigable(cx, cy, walls, circle_obstacles, rect_obstacles, min_wall_dist=3.0, min_obstacle_dist=3.0):
+                return cx, cy
+
+    return x, y
 
 
 def _entry_candidates(
@@ -167,14 +197,34 @@ def _entry_candidates(
     Если точка проецируется близко (<40% длины ребра) к одной из
     вершин, возвращается только эта вершина — иначе обе.
 
-    Если все ближайшие рёбра заблокированы стенами — ищутся видимые вершины
-    этажа в той же комнате. Fallback — ближайшая вершина / ребро этажа.
+    Если точка лежит внутри комнаты — сначала ищутся вершины в той же комнате,
+    чтобы маршрут не прыгал через наружные стены.
     """
     walls_list = walls or []
     circles_list = circle_obstacles or []
     rects_list = rect_obstacles or []
+    rooms_list = (floor.layout_data or {}).get("rooms", [])
 
-    # 1. Поиск ближайших проекций на коридорные рёбра этажа
+    # Мягко смещаем точку, если она упала внутрь препятствия или стены
+    x, y = _snap_to_navigable(x, y, walls_list, circles_list, rects_list, rooms_list)
+
+    floor_nodes = [n for n in ctx.nodes.values() if n.floor_id == floor.id]
+    cur_room_id = find_room_for_point(x, y, rooms_list, tolerance=8.0)
+
+    # 1. Если точка внутри комнаты, ищем узлы графа в той же комнате с прямой видимостью
+    if cur_room_id:
+        room_nodes: List[Tuple[uuid.UUID, float]] = []
+        for n in floor_nodes:
+            n_room = find_room_for_point(n.x, n.y, rooms_list, tolerance=4.0)
+            if n_room == cur_room_id:
+                dist = euclidean_px(x, y, n.x, n.y)
+                if is_segment_clear((x, y), (n.x, n.y), walls_list, circles_list, rects_list):
+                    room_nodes.append((n.id, dist))
+        if room_nodes:
+            room_nodes.sort(key=lambda item: item[1])
+            return [item[0] for item in room_nodes[:4]], None
+
+    # 2. Поиск ближайших проекций на коридорные рёбра этажа
     edge_projections = find_candidate_edge_projections(
         x, y, floor.id, ctx.nodes, ctx.edges.values(), limit=12
     )
@@ -198,10 +248,8 @@ def _entry_candidates(
             return [projection.edge.to_node_id], projection
         return [projection.edge.from_node_id, projection.edge.to_node_id], projection
 
-    # 2. Если все проекции на рёбра за стеной (например, точка А в комнате без готового ребра),
-    # ищем видимые вершины этажа по прямой без пересечения стен:
+    # 3. Если все проекции на рёбра за стеной, ищем любые видимые вершины этажа по прямой
     visible_nodes: List[Tuple[uuid.UUID, float]] = []
-    floor_nodes = [n for n in ctx.nodes.values() if n.floor_id == floor.id]
     for n in floor_nodes:
         dist = euclidean_px(x, y, n.x, n.y)
         if dist <= 600.0:
@@ -212,7 +260,18 @@ def _entry_candidates(
         visible_nodes.sort(key=lambda item: item[1])
         return [item[0] for item in visible_nodes[:6]], None
 
-    # 3. Fallback: ближайшая проекция из всех
+    # 4. Fallback: если были в комнате, берем ближайший узел этой комнаты
+    if cur_room_id:
+        room_fallback = [
+            (n.id, euclidean_px(x, y, n.x, n.y))
+            for n in floor_nodes
+            if find_room_for_point(n.x, n.y, rooms_list, tolerance=8.0) == cur_room_id
+        ]
+        if room_fallback:
+            room_fallback.sort(key=lambda item: item[1])
+            return [room_fallback[0][0]], None
+
+    # 5. Fallback: ближайшая проекция из всех
     if edge_projections:
         projection = edge_projections[0]
         if projection.t <= 0.4:

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loader2, AlertCircle, Layers, Sliders, X } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Layers, Sliders, X, MapPin } from 'lucide-vue-next'
 import { getSpaceBySlug, getRoute } from '../api'
 import type { Space, Floor, POI, PoiCategory, RouteResponse, RoutePoint } from '../types'
 import ViewerMap from '../components/ViewerMap.vue'
@@ -108,6 +108,13 @@ function handleSelectPoi(poi: POI) {
     return
   }
 
+  // Если точка старта уже задана пользователем, а цель еще не выбрана — сразу строим маршрут к этому POI!
+  if (routeOrigin.value && !activeRoute.value) {
+    routeTarget.value = poi
+    calculateRoute()
+    return
+  }
+
   selectedPoi.value = poi
 
   // Если точка на другом этаже — автоматически переключаем этаж
@@ -153,7 +160,7 @@ function handleMapClick(coords: { x: number; y: number; floor_id: string }) {
       x: coords.x,
       y: coords.y,
       floor_id: coords.floor_id,
-      title: `Точка (${coords.x}, ${coords.y})`,
+      title: 'Выбранная точка (А)',
     }
     isPickingStartOnMap.value = false
     if (routeTarget.value) {
@@ -443,9 +450,39 @@ watch(
         </div>
       </div>
 
+      <!-- Подсказка в режиме выбора точки старта -->
+      <transition
+        enter-active-class="transition duration-200 ease-out transform"
+        enter-from-class="-translate-y-4 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition duration-150 ease-in transform"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="-translate-y-4 opacity-0"
+      >
+        <div
+          v-if="isPickingStartOnMap"
+          class="absolute top-28 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] sm:w-auto bg-slate-900/95 border border-emerald-500/80 text-emerald-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 pointer-events-auto"
+        >
+          <div class="flex items-center gap-2.5">
+            <span class="relative flex h-3 w-3 shrink-0">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span class="text-xs sm:text-sm font-medium text-white">Кликните на схеме, чтобы указать точку отправления (старт)</span>
+          </div>
+          <button
+            type="button"
+            @click="isPickingStartOnMap = false"
+            class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
+          >
+            Отмена
+          </button>
+        </div>
+      </transition>
+
       <!-- ВЕРХНИЙ ОВЕРЛЕЙ: Поиск и чипсы категорий -->
       <header
-        class="absolute left-0 right-0 z-20 p-2.5 sm:p-4 max-w-2xl mx-auto pointer-events-none"
+        class="absolute left-0 right-0 z-20 p-2.5 sm:p-4 max-w-2xl mx-auto pointer-events-none flex flex-col gap-2"
         :class="space.is_published === false ? 'top-8' : 'top-0'"
         style="padding-top: max(0.625rem, env(safe-area-inset-top, 0px));"
       >
@@ -455,6 +492,37 @@ watch(
           :pois="space.pois"
           @select-poi="handleSelectPoi"
         />
+
+        <!-- Быстрая кнопка: Установить точку старта на карте -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+          <button
+            v-if="!routeOrigin && !isPickingStartOnMap && !isRouting"
+            type="button"
+            @click="isPickingStartOnMap = true"
+            class="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-md flex items-center gap-2 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+            title="Выбрать точку отправления прямо на схеме"
+          >
+            <MapPin class="w-3.5 h-3.5 text-emerald-400" />
+            <span>Установить точку старта</span>
+          </button>
+
+          <!-- Индикатор выбранного старта (когда цель еще не выбрана) -->
+          <div
+            v-else-if="routeOrigin && !isRouting"
+            class="px-3 py-1.5 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 shadow-lg backdrop-blur-md flex items-center gap-2 text-xs font-medium"
+          >
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Старт: <b>{{ routeOrigin.title || 'Точка на карте' }}</b></span>
+            <button
+              type="button"
+              @click="handleResetRoute"
+              class="ml-1 p-0.5 rounded text-emerald-400 hover:text-white transition-colors cursor-pointer"
+              title="Сбросить точку старта"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </header>
 
       <!-- ПРАВЫЙ ОВЕРЛЕЙ: Плавающий переключатель этажей -->
@@ -485,6 +553,29 @@ watch(
           @open-virtual-tour="handleOpenVirtualTour"
           @pick-origin-on-map="togglePickOriginOnMap"
         />
+
+        <!-- Подсказка выбора цели после установки старта -->
+        <div
+          v-else-if="routeOrigin && !routeTarget && !isRouting"
+          class="max-w-md w-full p-3.5 rounded-2xl bg-slate-900/95 border border-blue-500/60 shadow-2xl backdrop-blur-xl text-slate-200 pointer-events-auto flex items-center justify-between gap-3"
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/60 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
+              A
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-white">Точка старта (А) установлена</div>
+              <div class="text-[11px] text-slate-400 truncate">Теперь выберите куда идти — нажмите на объект (POI) на карте или в поиске</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            @click="handleResetRoute"
+            class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium shrink-0 cursor-pointer"
+          >
+            Сбросить
+          </button>
+        </div>
 
         <!-- Bottom Sheet выбранного POI -->
         <PoiBottomSheet

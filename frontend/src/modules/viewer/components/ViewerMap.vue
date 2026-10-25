@@ -150,6 +150,111 @@ function createMarkerHtml(poi: POI, isSelected: boolean): string {
   `
 }
 
+function getCorridorPolygon(c: any): [number, number][] {
+  const x1 = Number(c.x1)
+  const y1 = Number(c.y1)
+  const x2 = Number(c.x2)
+  const y2 = Number(c.y2)
+  const r = (Number(c.width) || 24) / 2.0
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const len = Math.hypot(dx, dy)
+
+  const pts: [number, number][] = []
+  if (len < 0.1) {
+    const num = 16
+    for (let i = 0; i < num; i++) {
+      const a = (i * 2 * Math.PI) / num
+      pts.push([y1 + r * Math.sin(a), x1 + r * Math.cos(a)])
+    }
+    return pts
+  }
+
+  const baseAngle = Math.atan2(dy, dx)
+  const numArc = 8
+
+  for (let i = 0; i <= numArc; i++) {
+    const a = baseAngle - Math.PI / 2 + (i * Math.PI) / numArc
+    pts.push([y2 + r * Math.sin(a), x2 + r * Math.cos(a)])
+  }
+
+  for (let i = 0; i <= numArc; i++) {
+    const a = baseAngle + Math.PI / 2 + (i * Math.PI) / numArc
+    pts.push([y1 + r * Math.sin(a), x1 + r * Math.cos(a)])
+  }
+
+  return pts
+}
+
+function snapPointToNavigable(x: number, y: number): { x: number; y: number } {
+  if (!props.floor.layout_data) return { x, y }
+  const { obstacles, walls } = props.floor.layout_data
+
+  let curX = x
+  let curY = y
+
+  // 1. Проверка круглых препятствий
+  if (Array.isArray(obstacles)) {
+    for (const o of obstacles) {
+      if (o.type === 'circle') {
+        const ox = Number(o.x)
+        const oy = Number(o.y)
+        const rad = Number(o.radius || 30)
+        const dist = Math.hypot(curX - ox, curY - oy)
+        if (dist < rad + 4) {
+          const angle = dist > 0.1 ? Math.atan2(curY - oy, curX - ox) : 0
+          curX = Math.round(ox + (rad + 10) * Math.cos(angle))
+          curY = Math.round(oy + (rad + 10) * Math.sin(angle))
+        }
+      } else if (o.type === 'rect') {
+        const rx = Number(o.x)
+        const ry = Number(o.y)
+        const rw = Number(o.width)
+        const rh = Number(o.height)
+        if (curX >= rx - 4 && curX <= rx + rw + 4 && curY >= ry - 4 && curY <= ry + rh + 4) {
+          const dLeft = curX - rx
+          const dRight = rx + rw - curX
+          const dBottom = curY - ry
+          const dTop = ry + rh - curY
+          const minD = Math.min(dLeft, dRight, dBottom, dTop)
+          if (minD === dLeft) curX = rx - 10
+          else if (minD === dRight) curX = rx + rw + 10
+          else if (minD === dBottom) curY = ry - 10
+          else curY = ry + rh + 10
+        }
+      }
+    }
+  }
+
+  // 2. Проверка стен
+  if (Array.isArray(walls)) {
+    for (const w of walls) {
+      const x1 = Number(w.x1)
+      const y1 = Number(w.y1)
+      const x2 = Number(w.x2)
+      const y2 = Number(w.y2)
+      const dx = x2 - x1
+      const dy = y2 - y1
+      const lenSq = dx * dx + dy * dy
+      if (lenSq > 0) {
+        let t = ((curX - x1) * dx + (curY - y1) * dy) / lenSq
+        t = Math.max(0, Math.min(1, t))
+        const projX = x1 + t * dx
+        const projY = y1 + t * dy
+        const dist = Math.hypot(curX - projX, curY - projY)
+        const thick = Number(w.thickness || 6)
+        if (dist < thick / 2 + 6) {
+          const angle = dist > 0.1 ? Math.atan2(curY - projY, curX - projX) : (Math.PI / 2)
+          curX = Math.round(projX + (thick / 2 + 12) * Math.cos(angle))
+          curY = Math.round(projY + (thick / 2 + 12) * Math.sin(angle))
+        }
+      }
+    }
+  }
+
+  return { x: curX, y: curY }
+}
+
 function handleResize() {
   if (map) {
     map.invalidateSize()
@@ -174,9 +279,12 @@ function initMap() {
   routeEndpointsGroup = L.layerGroup().addTo(map)
 
   map.on('click', (e) => {
+    const rawX = Math.round(e.latlng.lng)
+    const rawY = Math.round(e.latlng.lat)
+    const snapped = snapPointToNavigable(rawX, rawY)
     emit('mapClick', {
-      x: Math.round(e.latlng.lng),
-      y: Math.round(e.latlng.lat),
+      x: snapped.x,
+      y: snapped.y,
       floor_id: props.floor.id,
     })
   })
@@ -278,13 +386,17 @@ function renderFloorPlan() {
       })
     }
 
-    // 2. Коридоры
+    // 2. Коридоры (отрисовываются как геометрический полигон-капсула, сохраняющий истинную ширину при любом зуме)
     if (Array.isArray(layout.corridors)) {
       layout.corridors.forEach((c: any) => {
-        const poly = L.polyline(
-          [[c.y1, c.x1], [c.y2, c.x2]],
-          { color: 'rgba(59, 130, 246, 0.2)', weight: c.width || 24, lineCap: 'round', lineJoin: 'round' }
-        )
+        const capsuleCoords = getCorridorPolygon(c)
+        const poly = L.polygon(capsuleCoords, {
+          color: 'rgba(59, 130, 246, 0.4)',
+          weight: 1.5,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.2,
+          interactive: false,
+        })
         layoutGroup?.addLayer(poly)
       })
     }
@@ -404,9 +516,13 @@ function renderRoute() {
 
       startMarker.on('dragend', () => {
         const pos = startMarker.getLatLng()
+        const rawX = Math.round(pos.lng)
+        const rawY = Math.round(pos.lat)
+        const snapped = snapPointToNavigable(rawX, rawY)
+        startMarker.setLatLng([snapped.y, snapped.x])
         emit('updateOrigin', {
-          x: Math.round(pos.lng),
-          y: Math.round(pos.lat),
+          x: snapped.x,
+          y: snapped.y,
           floor_id: props.floor.id,
         })
       })
@@ -478,9 +594,13 @@ function renderRoute() {
 
   startMarker.on('dragend', () => {
     const pos = startMarker.getLatLng()
+    const rawX = Math.round(pos.lng)
+    const rawY = Math.round(pos.lat)
+    const snapped = snapPointToNavigable(rawX, rawY)
+    startMarker.setLatLng([snapped.y, snapped.x])
     emit('updateOrigin', {
-      x: Math.round(pos.lng),
-      y: Math.round(pos.lat),
+      x: snapped.x,
+      y: snapped.y,
       floor_id: props.floor.id,
     })
   })

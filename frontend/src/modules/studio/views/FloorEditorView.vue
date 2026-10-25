@@ -387,7 +387,43 @@ function drawRooms() {
   })
 }
 
-// 2. Draw Corridors (Draggable)
+function getCorridorPolygon(c) {
+  const x1 = Number(c.x1)
+  const y1 = Number(c.y1)
+  const x2 = Number(c.x2)
+  const y2 = Number(c.y2)
+  const r = (Number(c.width) || 24) / 2.0
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const len = Math.hypot(dx, dy)
+
+  const pts = []
+  if (len < 0.1) {
+    const num = 16
+    for (let i = 0; i < num; i++) {
+      const a = (i * 2 * Math.PI) / num
+      pts.push([y1 + r * Math.sin(a), x1 + r * Math.cos(a)])
+    }
+    return pts
+  }
+
+  const baseAngle = Math.atan2(dy, dx)
+  const numArc = 8
+
+  for (let i = 0; i <= numArc; i++) {
+    const a = baseAngle - Math.PI / 2 + (i * Math.PI) / numArc
+    pts.push([y2 + r * Math.sin(a), x2 + r * Math.cos(a)])
+  }
+
+  for (let i = 0; i <= numArc; i++) {
+    const a = baseAngle + Math.PI / 2 + (i * Math.PI) / numArc
+    pts.push([y1 + r * Math.sin(a), x1 + r * Math.cos(a)])
+  }
+
+  return pts
+}
+
+// 2. Draw Corridors (Draggable, scales with map coordinates upon zoom)
 function drawCorridors() {
   if (!corridorsLayer || !window.L) return
   corridorsLayer.clearLayers()
@@ -396,14 +432,23 @@ function drawCorridors() {
   const corridors = layoutData.value.corridors || []
   corridors.forEach(c => {
     const isSel = selectedElement.value?.type === 'corridor' && selectedElement.value?.item?.id === c.id
-    const poly = L.polyline(
+    const capsuleCoords = getCorridorPolygon(c)
+    const poly = L.polygon(capsuleCoords, {
+      color: isSel ? '#34d399' : 'rgba(59, 130, 246, 0.5)',
+      weight: isSel ? 2.5 : 1.5,
+      dashArray: isSel ? '4, 4' : null,
+      fillColor: isSel ? '#10b981' : '#3b82f6',
+      fillOpacity: isSel ? 0.35 : 0.22,
+      className: 'element-draggable',
+    })
+
+    const spine = L.polyline(
       [[c.y1, c.x1], [c.y2, c.x2]],
       {
-        color: isSel ? '#34d399' : 'rgba(59, 130, 246, 0.35)',
-        weight: c.width || 24,
-        lineCap: 'round',
-        lineJoin: 'round',
-        className: 'element-draggable',
+        color: isSel ? '#10b981' : 'rgba(96, 165, 250, 0.7)',
+        weight: 2,
+        dashArray: '4, 4',
+        interactive: false,
       }
     )
 
@@ -414,7 +459,9 @@ function drawCorridors() {
 
     attachShapeDrag(poly, {
       onDrag: (dx, dy) => {
-        poly.setLatLngs([[origY1 + dy, origX1 + dx], [origY2 + dy, origX2 + dx]])
+        const movedC = { ...c, x1: origX1 + dx, y1: origY1 + dy, x2: origX2 + dx, y2: origY2 + dy }
+        poly.setLatLngs(getCorridorPolygon(movedC))
+        spine.setLatLngs([[origY1 + dy, origX1 + dx], [origY2 + dy, origX2 + dx]])
       },
       onDragEnd: async (dx, dy) => {
         c.x1 = Math.round(origX1 + dx)
@@ -430,6 +477,7 @@ function drawCorridors() {
       },
     })
     corridorsLayer.addLayer(poly)
+    corridorsLayer.addLayer(spine)
   })
 }
 
