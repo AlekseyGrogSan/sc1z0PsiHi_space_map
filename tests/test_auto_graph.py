@@ -262,3 +262,63 @@ def test_auto_graph_handles_negative_and_extended_coordinates():
     poi_node = next(n for n in nodes if abs(n["x"] - (-350)) < 1.0 and abs(n["y"] - 150) < 1.0)
     assert poi_node is not None
 
+
+def test_auto_graph_prevents_exterior_nodes_and_wall_clipping():
+    """
+    Проверяет, что при наличии комнат и коридора:
+    1. Узлы не вылетают наружу здания в пустоту (за пределы комнат/коридоров).
+    2. Ни одно ребро не режет внешние стены или углы стен.
+    """
+    layout = {
+        "rooms": [
+            {"id": "r1", "title": "ЗОНА 1", "x": 100, "y": 100, "width": 300, "height": 300},
+            {"id": "r2", "title": "ЗОНА 2", "x": 600, "y": 100, "width": 300, "height": 300},
+        ],
+        "walls": [
+            # Периметр Зоны 1
+            {"x1": 100, "y1": 100, "x2": 400, "y2": 100},
+            {"x1": 100, "y1": 400, "x2": 400, "y2": 400},
+            {"x1": 100, "y1": 100, "x2": 100, "y2": 400},
+            {"x1": 400, "y1": 100, "x2": 400, "y2": 220},  # дверной проём 220..280
+            {"x1": 400, "y1": 280, "x2": 400, "y2": 400},
+            # Периметр Зоны 2
+            {"x1": 600, "y1": 100, "x2": 900, "y2": 100},
+            {"x1": 600, "y1": 400, "x2": 900, "y2": 400},
+            {"x1": 900, "y1": 100, "x2": 900, "y2": 400},
+            {"x1": 600, "y1": 100, "x2": 600, "y2": 220},  # дверной проём 220..280
+            {"x1": 600, "y1": 280, "x2": 600, "y2": 400},
+        ],
+        "corridors": [
+            {"x1": 400, "y1": 250, "x2": 600, "y2": 250, "width": 40},
+        ],
+    }
+    mock_pois = [
+        {"x": 200, "y": 250, "category": "stand", "title": "st1"},
+        {"x": 800, "y": 250, "category": "stand", "title": "st2"},
+    ]
+
+    nodes, edges = generate_auto_graph(1000, 600, layout, mock_pois)
+
+    # 1. Проверяем, что нет узлов в пустоте (например, далеко над крышей y < 50 или под полом y > 450)
+    void_nodes = [n for n in nodes if n["y"] < 50 or n["y"] > 450]
+    assert len(void_nodes) == 0, f"Обнаружены узлы в пустоте за пределами здания: {void_nodes}"
+
+    # 2. Проверяем, что в промежутке между комнатами (x от 420 до 580)
+    # узлы могут находиться ТОЛЬКО вдоль коридора (y около 250), а не в пустоте вверху/внизу
+    gap_void_nodes = [
+        n for n in nodes
+        if 420 < n["x"] < 580 and (n["y"] < 200 or n["y"] > 300)
+    ]
+    assert len(gap_void_nodes) == 0, f"Обнаружены узлы в пустоте между корпусами: {gap_void_nodes}"
+
+    # 3. Ни одно ребро не должно пересекать стены
+    from app.services.auto_graph import line_intersection
+    for i1, i2 in edges:
+        p1 = (nodes[i1]["x"], nodes[i1]["y"])
+        p2 = (nodes[i2]["x"], nodes[i2]["y"])
+        for w in layout["walls"]:
+            w_p1 = (w["x1"], w["y1"])
+            w_p2 = (w["x2"], w["y2"])
+            assert not line_intersection(p1, p2, w_p1, w_p2), f"Ребро {p1}->{p2} режет стену {w}!"
+
+

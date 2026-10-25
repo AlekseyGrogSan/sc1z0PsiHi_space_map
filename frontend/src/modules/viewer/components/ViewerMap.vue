@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import L from 'leaflet'
+import { resolveMediaUrl } from '../../../api/client'
 import type { Floor, POI, RouteResponse, PoiCategory, RoutePoint } from '../types'
 
 interface Props {
@@ -176,14 +177,18 @@ function renderFloorPlan() {
     layoutGroup.clearLayers()
   }
 
+  const floorHeight = props.floor.height || (props.floor as any).height_px || 900
+  const floorWidth = props.floor.width || (props.floor as any).width_px || 1400
   const bounds: L.LatLngBoundsExpression = [
     [0, 0],
-    [props.floor.height || 900, props.floor.width || 1400],
+    [floorHeight, floorWidth],
   ]
 
   // Фоновая подложка чертежа (если загружена)
-  if (props.floor.plan_image_url) {
-    currentOverlay = L.imageOverlay(props.floor.plan_image_url, bounds, { opacity: 0.85 }).addTo(map)
+  const rawPlanUrl = props.floor.plan_image_url || (props.floor as any).plan_url
+  if (rawPlanUrl) {
+    const resolvedUrl = resolveMediaUrl(rawPlanUrl)
+    currentOverlay = L.imageOverlay(resolvedUrl, bounds, { opacity: 0.85 }).addTo(map)
   }
 
   // Отрисовка 2D-векторных элементов карты (комнаты, стены, препятствия, коридоры)

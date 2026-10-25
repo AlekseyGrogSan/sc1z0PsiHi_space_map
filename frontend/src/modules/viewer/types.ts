@@ -25,8 +25,11 @@ export interface Floor {
   number: number
   title: string
   plan_image_url: string
+  plan_url?: string
   width: number
   height: number
+  width_px?: number
+  height_px?: number
   ppm: number
   layout_data?: FloorLayout | null
 }

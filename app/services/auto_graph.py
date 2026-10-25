@@ -39,8 +39,8 @@ def line_intersection(
     ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom
     ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom
 
-    # Строгое пересечение внутри отрезков
-    return 0.005 <= ua <= 0.995 and 0.005 <= ub <= 0.995
+    # Отрезок луча внутри (0.001..0.999), а отрезок стены p3-p4 полностью [-0.01..1.01] (без дыр на стыках)
+    return 0.001 <= ua <= 0.999 and -0.01 <= ub <= 1.01
 
 
 def distance_point_to_segment(
@@ -57,6 +57,38 @@ def distance_point_to_segment(
     return math.hypot(px - proj_x, py - proj_y)
 
 
+def is_point_inside_walkable_area(
+    x: float,
+    y: float,
+    rooms: List[Dict[str, Any]],
+    corridors: List[Dict[str, Any]],
+    tolerance: float = 20.0,
+) -> bool:
+    """
+    Проверяет, находится ли точка внутри доступной зоны (комнаты или коридора).
+    Если на этаже не заданы ни комнаты, ни коридоры — возвращает True.
+    """
+    if not rooms and not corridors:
+        return True
+
+    for r in rooms:
+        rx = float(r.get("x", 0))
+        ry = float(r.get("y", 0))
+        rw = float(r.get("width", 0))
+        rh = float(r.get("height", 0))
+        if (rx - tolerance <= x <= rx + rw + tolerance) and (ry - tolerance <= y <= ry + rh + tolerance):
+            return True
+
+    for c in corridors:
+        cx1, cy1 = float(c.get("x1", 0)), float(c.get("y1", 0))
+        cx2, cy2 = float(c.get("x2", 0)), float(c.get("y2", 0))
+        c_width = float(c.get("width", 30))
+        if distance_point_to_segment(x, y, cx1, cy1, cx2, cy2) <= (c_width / 2.0 + tolerance):
+            return True
+
+    return False
+
+
 def is_segment_clear(
     p1: Tuple[float, float],
     p2: Tuple[float, float],
@@ -71,6 +103,14 @@ def is_segment_clear(
         w_p2 = (float(w["x2"]), float(w["y2"]))
         if line_intersection(p1, p2, w_p1, w_p2):
             return False
+        # Проверяем расстояние от луча до концов стены (углы и стыки стен толщиной ~6px),
+        # если луч не начинается/заканчивается вблизи этого конца
+        if math.hypot(p1[0] - w_p1[0], p1[1] - w_p1[1]) > 4.0 and math.hypot(p2[0] - w_p1[0], p2[1] - w_p1[1]) > 4.0:
+            if distance_point_to_segment(w_p1[0], w_p1[1], p1[0], p1[1], p2[0], p2[1]) < 3.5:
+                return False
+        if math.hypot(p1[0] - w_p2[0], p1[1] - w_p2[1]) > 4.0 and math.hypot(p2[0] - w_p2[0], p2[1] - w_p2[1]) > 4.0:
+            if distance_point_to_segment(w_p2[0], w_p2[1], p1[0], p1[1], p2[0], p2[1]) < 3.5:
+                return False
 
     # 2. Проверка столкновения с круглыми объектами (колонны/фонтаны/столы)
     for c in circle_obstacles:
@@ -90,6 +130,37 @@ def is_segment_clear(
         for edge_p1, edge_p2 in corners:
             if line_intersection(p1, p2, edge_p1, edge_p2):
                 return False
+        # Проверяем, не лежит ли одна из точек внутри прямоугольного препятствия
+        if (rx <= p1[0] <= rx + rw and ry <= p1[1] <= ry + rh) or (
+            rx <= p2[0] <= rx + rw and ry <= p2[1] <= ry + rh
+        ):
+            return False
+
+    return True
+
+
+def is_segment_walkable(
+    p1: Tuple[float, float],
+    p2: Tuple[float, float],
+    rooms: List[Dict[str, Any]],
+    corridors: List[Dict[str, Any]],
+    tolerance: float = 35.0,
+) -> bool:
+    """
+    Проверяет, что отрезок p1-p2 проходит по доступной площади здания (комнаты или коридоры).
+    Если на этаже не заданы ни комнаты, ни коридоры — возвращает True.
+    """
+    if not rooms and not corridors:
+        return True
+
+    dist = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+    steps = max(2, int(dist // 35.0))
+    for s in range(1, steps):
+        t = s / steps
+        sx = p1[0] + (p2[0] - p1[0]) * t
+        sy = p1[1] + (p2[1] - p1[1]) * t
+        if not is_point_inside_walkable_area(sx, sy, rooms, corridors, tolerance=tolerance):
+            return False
 
     return True
 
@@ -147,14 +218,15 @@ def generate_auto_graph(
         })
         return idx
 
-    def add_edge(idx1: int, idx2: int) -> None:
+    def add_edge(idx1: int, idx2: int, force: bool = False) -> None:
         if idx1 == idx2:
             return
         p1 = (nodes[idx1]["x"], nodes[idx1]["y"])
         p2 = (nodes[idx2]["x"], nodes[idx2]["y"])
         if is_segment_clear(p1, p2, walls, circle_obstacles, rect_obstacles):
-            pair = (min(idx1, idx2), max(idx1, idx2))
-            edges_set.add(pair)
+            if force or is_segment_walkable(p1, p2, rooms, corridors, tolerance=35.0):
+                pair = (min(idx1, idx2), max(idx1, idx2))
+                edges_set.add(pair)
 
     # 1. Точки прикрепления для всех POI (поддержка ORM моделей и dict)
     poi_node_indices: List[int] = []
@@ -239,6 +311,8 @@ def generate_auto_graph(
                 (x2 - margin * nx, y2 - margin * ny),
             ]
             for bx, by in wall_bypasses:
+                if not is_point_inside_walkable_area(bx, by, rooms, corridors, tolerance=25.0):
+                    continue
                 clear_point = True
                 for c in circle_obstacles:
                     if math.hypot(bx - c["x"], by - c["y"]) <= c["radius"] + 10.0:
@@ -266,6 +340,8 @@ def generate_auto_graph(
             if 25.0 <= gap <= 140.0:
                 door_mid_x = (ep1[0] + ep2[0]) / 2.0
                 door_mid_y = (ep1[1] + ep2[1]) / 2.0
+                if not is_point_inside_walkable_area(door_mid_x, door_mid_y, rooms, corridors, tolerance=30.0):
+                    continue
                 door_idx = add_node(door_mid_x, door_mid_y, node_type="door")
                 doorway_node_indices.append(door_idx)
 
@@ -379,7 +455,7 @@ def generate_auto_graph(
                     closest_dist = dist
                     best_other = other_idx
             if best_other is not None:
-                add_edge(poi_idx, best_other)
+                add_edge(poi_idx, best_other, force=True)
 
     edges_payload = list(edges_set)
     return nodes, edges_payload
