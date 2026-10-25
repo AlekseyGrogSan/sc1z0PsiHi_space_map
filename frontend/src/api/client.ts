@@ -5,11 +5,28 @@ import axios, {
   type AxiosError 
 } from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+function resolveBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_URL
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location
+    // Если фронтенд открыт по внешнему IP или домену (не localhost) —
+    // автоматически направляем запросы на бэкенд того же хоста (порт 8000)
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+        return `${protocol}//${hostname}:8000/api/v1`
+      }
+    }
+  }
+
+  return envUrl || 'http://localhost:8000/api/v1'
+}
+
+const BASE_URL = resolveBaseUrl()
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 8000,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
