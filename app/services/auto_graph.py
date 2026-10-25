@@ -359,47 +359,55 @@ def generate_auto_graph(
         })
         return idx
 
-    def add_edge(idx1: int, idx2: int, force: bool = False) -> None:
+    def add_edge(idx1: int, idx2: int, force: bool = False) -> bool:
         if idx1 == idx2 or idx1 < 0 or idx2 < 0 or idx1 >= len(nodes) or idx2 >= len(nodes):
-            return
+            return False
 
         n1 = nodes[idx1]
         n2 = nodes[idx2]
 
+        p1 = (n1["x"], n1["y"])
+        p2 = (n2["x"], n2["y"])
+
+        # Физическая проходимость луча: луч не должен пересекать ни одну стену и препятствие
+        if not is_segment_clear(p1, p2, walls, circle_obstacles, rect_obstacles):
+            return False
+
+        edge_tol = 6.0 if (n1.get("node_type") == "door" or n2.get("node_type") == "door") else 3.0
+        if not force and not is_segment_walkable(p1, p2, rooms, corridors, tolerance=edge_tol):
+            return False
+
         if not force:
             r1 = n1.get("room_id")
             r2 = n2.get("room_id")
-            # ПРАВИЛО 1: Узлы разных комнат не могут соединяться напрямую!
-            if r1 and r2 and r1 != r2:
-                return
+            dist = math.hypot(n1["x"] - n2["x"], n1["y"] - n2["y"])
 
-            # ПРАВИЛО 1б: Узел комнаты не может соединяться напрямую с коридорным узлом
-            # (переход возможен только через дверной узел)
+            # ПРАВИЛО 1: Узлы разных комнат не могут соединяться напрямую на больших дистанциях,
+            # но если между ними прямая чистая видимость без стен (< 140px) или один из узлов - дверь,
+            # это валидный переход через открытый проем
+            if r1 and r2 and r1 != r2:
+                if n1.get("node_type") != "door" and n2.get("node_type") != "door" and dist > 140.0:
+                    return False
+
+            # ПРАВИЛО 1б: Узел комнаты и узел открытого коридора
+            # Если отрезок чист от стен, переход возможен до 180px или через дверь
             if (rooms or corridors):
                 if (r1 and not r2 and n2.get("node_type") != "door") or (r2 and not r1 and n1.get("node_type") != "door"):
-                    return
+                    if dist > 180.0:
+                        return False
 
-            # ПРАВИЛО 2: Дверной узел может соединяться только с узлами прилегающих к нему комнат
+            # ПРАВИЛО 2: Дверной узел может соединяться с узлами прилегающих к нему комнат
             for d_idx, o_idx in [(idx1, idx2), (idx2, idx1)]:
                 if d_idx in door_adjacent_rooms:
                     allowed_rooms = door_adjacent_rooms[d_idx]
                     o_room = nodes[o_idx].get("room_id")
-                    if o_room is not None and o_room not in allowed_rooms:
-                        return
-                    if o_idx in door_adjacent_rooms:
-                        other_allowed = door_adjacent_rooms[o_idx]
-                        if not (allowed_rooms & other_allowed):
-                            d_dist = math.hypot(n1["x"] - n2["x"], n1["y"] - n2["y"])
-                            if d_dist > 120.0:
-                                return
+                    if o_room is not None and allowed_rooms and o_room not in allowed_rooms:
+                        if dist > 80.0:
+                            return False
 
-        p1 = (n1["x"], n1["y"])
-        p2 = (n2["x"], n2["y"])
-        if is_segment_clear(p1, p2, walls, circle_obstacles, rect_obstacles):
-            edge_tol = 6.0 if (n1.get("node_type") == "door" or n2.get("node_type") == "door") else 3.0
-            if force or is_segment_walkable(p1, p2, rooms, corridors, tolerance=edge_tol):
-                pair = (min(idx1, idx2), max(idx1, idx2))
-                edges_set.add(pair)
+        pair = (min(idx1, idx2), max(idx1, idx2))
+        edges_set.add(pair)
+        return True
 
     # 1. Точки прикрепления для всех POI (поддержка ORM моделей и dict)
     poi_node_indices: List[int] = []
@@ -428,11 +436,11 @@ def generate_auto_graph(
         if poi_idx != -1:
             poi_node_indices.append(poi_idx)
             if node_type == "door":
-                adj = find_rooms_near_point(float(px), float(py), rooms, distance=40.0)
+                adj = find_rooms_near_point(float(px), float(py), rooms, distance=60.0)
                 if adj:
                     door_adjacent_rooms[poi_idx] = adj
 
-    # 2. Сбор концов стен и авто-обнаружение дверных проёмов (проходов между концами разных стен)
+    # 2. Сбор концов стен и авто-обнаружение дверных проёмов
     wall_endpoints_with_id: List[Tuple[Tuple[float, float], int]] = []
     for w_idx, w in enumerate(walls):
         x1, y1 = float(w["x1"]), float(w["y1"])
@@ -441,28 +449,73 @@ def generate_auto_graph(
         wall_endpoints_with_id.append(((x2, y2), w_idx))
 
     doorway_node_indices: List[int] = []
+
+    def try_add_doorway(mx: float, my: float, search_radius: float = 70.0) -> int:
+        if not is_point_inside_walkable_area(mx, my, rooms, corridors, tolerance=5.0):
+            return -1
+        if any(distance_point_to_segment(mx, my, float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"])) < 4.0 for w in walls):
+            return -1
+        door_idx = add_node(mx, my, node_type="door", room_id=None, force_inside=True)
+        if door_idx != -1:
+            near_rooms = find_rooms_near_point(mx, my, rooms, distance=search_radius)
+            if near_rooms:
+                door_adjacent_rooms.setdefault(door_idx, set()).update(near_rooms)
+            if door_idx not in doorway_node_indices:
+                doorway_node_indices.append(door_idx)
+        return door_idx
+
+    # 2a. Проходы между концами разных стен (20..220px)
     for i, (ep1, w1) in enumerate(wall_endpoints_with_id):
         for j, (ep2, w2) in enumerate(wall_endpoints_with_id):
             if i >= j or w1 == w2:
                 continue
             gap = math.hypot(ep2[0] - ep1[0], ep2[1] - ep1[1])
-            # Дверной проём обычно от 25 до 140 пикселей между концами разных стен
-            if 25.0 <= gap <= 140.0:
+            if 20.0 <= gap <= 220.0:
                 door_mid_x = (ep1[0] + ep2[0]) / 2.0
                 door_mid_y = (ep1[1] + ep2[1]) / 2.0
-                if not is_point_inside_walkable_area(door_mid_x, door_mid_y, rooms, corridors, tolerance=3.0):
-                    continue
-                on_wall = any(
-                    distance_point_to_segment(door_mid_x, door_mid_y, float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"])) < 5.0
-                    for w in walls
-                )
-                if on_wall:
-                    continue
-                door_idx = add_node(door_mid_x, door_mid_y, node_type="door", room_id=None)
-                if door_idx != -1:
-                    door_adjacent_rooms[door_idx] = find_rooms_near_point(door_mid_x, door_mid_y, rooms, distance=35.0)
-                    if door_idx not in doorway_node_indices:
-                        doorway_node_indices.append(door_idx)
+                try_add_doorway(door_mid_x, door_mid_y, search_radius=70.0)
+
+    # 2b. Проходы между концом стены и сегментом другой стены (Т-образные проходы, двери у глухих стен 20..220px)
+    for ep, w_idx in wall_endpoints_with_id:
+        for other_idx, w in enumerate(walls):
+            if w_idx == other_idx:
+                continue
+            wx1, wy1 = float(w["x1"]), float(w["y1"])
+            wx2, wy2 = float(w["x2"]), float(w["y2"])
+            dist = distance_point_to_segment(ep[0], ep[1], wx1, wy1, wx2, wy2)
+            if 20.0 <= dist <= 220.0:
+                dx, dy = wx2 - wx1, wy2 - wy1
+                l2 = dx * dx + dy * dy
+                if l2 > 0:
+                    t = max(0.0, min(1.0, ((ep[0] - wx1) * dx + (ep[1] - wy1) * dy) / l2))
+                    proj_x = wx1 + t * dx
+                    proj_y = wy1 + t * dy
+                    mx = (ep[0] + proj_x) / 2.0
+                    my = (ep[1] + proj_y) / 2.0
+                    other_walls = [walls[k] for k in range(len(walls)) if k not in (w_idx, other_idx)]
+                    if is_segment_clear(ep, (proj_x, proj_y), other_walls, circle_obstacles, rect_obstacles):
+                        try_add_doorway(mx, my, search_radius=70.0)
+
+    # 2c. Проходы на открытых границах комнат (открытые входы без сплошных стен)
+    for idx_r, r in enumerate(rooms):
+        rx, ry, rw, rh = normalize_rect(r)
+        r_id = str(r.get("id") or r.get("title") or f"room_{idx_r}")
+        for edge_start, edge_end in [
+            ((rx, ry), (rx + rw, ry)),
+            ((rx + rw, ry), (rx + rw, ry + rh)),
+            ((rx + rw, ry + rh), (rx, ry + rh)),
+            ((rx, ry + rh), (rx, ry)),
+        ]:
+            edge_len = math.hypot(edge_end[0] - edge_start[0], edge_end[1] - edge_start[1])
+            steps = max(1, int(edge_len // 50.0))
+            for s in range(1, steps + 1):
+                t = (s - 0.5) / steps
+                sx = edge_start[0] + (edge_end[0] - edge_start[0]) * t
+                sy = edge_start[1] + (edge_end[1] - edge_start[1]) * t
+                if not any(distance_point_to_segment(sx, sy, float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"])) < 12.0 for w in walls):
+                    d_idx = try_add_doorway(sx, sy, search_radius=60.0)
+                    if d_idx != -1:
+                        door_adjacent_rooms.setdefault(d_idx, set()).add(r_id)
 
     # 3. Проходы между смежными открытыми зонами (соприкасающиеся комнаты без стены)
     for idx_a, ra in enumerate(rooms):
@@ -480,13 +533,11 @@ def generate_auto_graph(
                     mx = (ax + aw + bx) / 2.0 if abs((ax + aw) - bx) <= 4.0 else (bx + bw + ax) / 2.0
                     my = (oy1 + oy2) / 2.0
                     if not any(distance_point_to_segment(mx, my, float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"])) < 5.0 for w in walls):
-                        trans_idx = add_node(mx, my, node_type="door", room_id=None)
+                        ra_id = str(ra.get("id") or ra.get("title") or f"room_{idx_a}")
+                        rb_id = str(rb.get("id") or rb.get("title") or f"room_{idx_b}")
+                        trans_idx = try_add_doorway(mx, my, search_radius=60.0)
                         if trans_idx != -1:
-                            ra_id = str(ra.get("id") or ra.get("title") or f"room_{idx_a}")
-                            rb_id = str(rb.get("id") or rb.get("title") or f"room_{idx_b}")
-                            door_adjacent_rooms[trans_idx] = {ra_id, rb_id}
-                            if trans_idx not in doorway_node_indices:
-                                doorway_node_indices.append(trans_idx)
+                            door_adjacent_rooms.setdefault(trans_idx, set()).update({ra_id, rb_id})
 
             # Соприкосновение по горизонтали
             if abs((ay + ah) - by) <= 4.0 or abs((by + bh) - ay) <= 4.0:
@@ -496,13 +547,11 @@ def generate_auto_graph(
                     my = (ay + ah + by) / 2.0 if abs((ay + ah) - by) <= 4.0 else (by + bh + ay) / 2.0
                     mx = (ox1 + ox2) / 2.0
                     if not any(distance_point_to_segment(mx, my, float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"])) < 5.0 for w in walls):
-                        trans_idx = add_node(mx, my, node_type="door", room_id=None)
+                        ra_id = str(ra.get("id") or ra.get("title") or f"room_{idx_a}")
+                        rb_id = str(rb.get("id") or rb.get("title") or f"room_{idx_b}")
+                        trans_idx = try_add_doorway(mx, my, search_radius=60.0)
                         if trans_idx != -1:
-                            ra_id = str(ra.get("id") or ra.get("title") or f"room_{idx_a}")
-                            rb_id = str(rb.get("id") or rb.get("title") or f"room_{idx_b}")
-                            door_adjacent_rooms[trans_idx] = {ra_id, rb_id}
-                            if trans_idx not in doorway_node_indices:
-                                doorway_node_indices.append(trans_idx)
+                            door_adjacent_rooms.setdefault(trans_idx, set()).update({ra_id, rb_id})
 
     # 4. Узлы и огибание для круглых объектов
     circle_ring_indices: List[List[int]] = []
@@ -709,7 +758,7 @@ def generate_auto_graph(
                     add_edge(prev_idx, curr_idx)
                 prev_idx = curr_idx
 
-    # 9. Соединяем дверные проёмы с видимыми узлами прилегающих зон (до 320px)
+    # 9. Соединяем дверные проёмы с видимыми узлами прилегающих зон (до 350px)
     for d_idx in doorway_node_indices:
         p_d = (nodes[d_idx]["x"], nodes[d_idx]["y"])
         candidates: List[Tuple[float, int]] = []
@@ -718,21 +767,25 @@ def generate_auto_graph(
                 continue
             p_o = (nodes[o_idx]["x"], nodes[o_idx]["y"])
             dist = math.hypot(p_o[0] - p_d[0], p_o[1] - p_d[1])
-            if dist <= 320.0:
+            if dist <= 350.0:
                 candidates.append((dist, o_idx))
         candidates.sort(key=lambda item: item[0])
-        for dist, o_idx in candidates[:12]:
-            add_edge(d_idx, o_idx)
+        conn = 0
+        for dist, o_idx in candidates:
+            if add_edge(d_idx, o_idx):
+                conn += 1
+                if conn >= 14:
+                    break
 
-    # 7. Соединяем коридорные узлы с близкими дверями и коридорами (до 220px)
+    # 10. Соединяем коридорные узлы с близкими дверями и коридорами (до 260px)
     for c_idx in corridor_node_indices:
         p_c = (nodes[c_idx]["x"], nodes[c_idx]["y"])
         for d_idx in doorway_node_indices:
             p_d = (nodes[d_idx]["x"], nodes[d_idx]["y"])
-            if math.hypot(p_d[0] - p_c[0], p_d[1] - p_c[1]) <= 220.0:
+            if math.hypot(p_d[0] - p_c[0], p_d[1] - p_c[1]) <= 260.0:
                 add_edge(c_idx, d_idx)
 
-    # 8. Соединяем POI с ближайшими видимыми узлами
+    # 11. Соединяем POI с ближайшими видимыми узлами
     for poi_idx in poi_node_indices:
         p_poi = (nodes[poi_idx]["x"], nodes[poi_idx]["y"])
         candidates = []
@@ -741,38 +794,44 @@ def generate_auto_graph(
                 continue
             p_o = (nodes[o_idx]["x"], nodes[o_idx]["y"])
             dist = math.hypot(p_o[0] - p_poi[0], p_o[1] - p_poi[1])
-            if dist <= 350.0:
+            if dist <= 400.0:
                 candidates.append((dist, o_idx))
         candidates.sort(key=lambda item: item[0])
-        for dist, o_idx in candidates[:6]:
-            add_edge(poi_idx, o_idx)
+        conn = 0
+        for dist, o_idx in candidates:
+            if add_edge(poi_idx, o_idx):
+                conn += 1
+                if conn >= 8:
+                    break
 
-    # 9. Локальная видимость внутри комнат и коридоров (до 180px)
+    # 12. Локальная видимость внутри комнат и коридоров (до 260px)
     for i in range(len(nodes)):
         p1 = (nodes[i]["x"], nodes[i]["y"])
         candidates = []
-        for j in range(i + 1, len(nodes)):
+        for j in range(len(nodes)):
+            if i == j:
+                continue
             p2 = (nodes[j]["x"], nodes[j]["y"])
             dist = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
-            if dist <= 180.0:
+            if dist <= 260.0:
                 candidates.append((dist, j))
         candidates.sort(key=lambda item: item[0])
-        for dist, j in candidates[:5]:
-            add_edge(i, j)
+        conn = 0
+        for dist, j in candidates:
+            if add_edge(i, j):
+                conn += 1
+                if conn >= 8:
+                    break
 
-    # 10. Гарантируем, что каждая POI соединена хотя бы с 1 ближайшим видимым узлом
+    # 13. Гарантируем, что каждая POI соединена хотя бы с 1 ближайшим видимым узлом
     for poi_idx in poi_node_indices:
         has_edge = any(poi_idx in e for e in edges_set)
         if not has_edge:
             closest_dist = float("inf")
             best_other = None
             p_poi = (nodes[poi_idx]["x"], nodes[poi_idx]["y"])
-            poi_room = nodes[poi_idx].get("room_id")
             for other_idx in range(len(nodes)):
                 if other_idx == poi_idx:
-                    continue
-                other_room = nodes[other_idx].get("room_id")
-                if poi_room and other_room and poi_room != other_room:
                     continue
                 p_other = (nodes[other_idx]["x"], nodes[other_idx]["y"])
                 dist = math.hypot(p_other[0] - p_poi[0], p_other[1] - p_poi[1])
@@ -781,6 +840,47 @@ def generate_auto_graph(
                     best_other = other_idx
             if best_other is not None:
                 add_edge(poi_idx, best_other, force=True)
+
+    # 14. Связывание изолированных компонент графа (если они взаимно видимы без стен)
+    if len(nodes) > 1:
+        adj: Dict[int, Set[int]] = {i: set() for i in range(len(nodes))}
+        for u, v in edges_set:
+            adj[u].add(v)
+            adj[v].add(u)
+
+        visited: Set[int] = set()
+        components: List[List[int]] = []
+        for i in range(len(nodes)):
+            if i not in visited:
+                comp: List[int] = []
+                queue = [i]
+                visited.add(i)
+                while queue:
+                    curr = queue.pop(0)
+                    comp.append(curr)
+                    for nbr in adj[curr]:
+                        if nbr not in visited:
+                            visited.add(nbr)
+                            queue.append(nbr)
+                components.append(comp)
+
+        if len(components) > 1:
+            for ci in range(len(components)):
+                for cj in range(ci + 1, len(components)):
+                    best_pair = None
+                    best_dist = float("inf")
+                    for u in components[ci]:
+                        pu = (nodes[u]["x"], nodes[u]["y"])
+                        for v in components[cj]:
+                            pv = (nodes[v]["x"], nodes[v]["y"])
+                            d = math.hypot(pu[0] - pv[0], pu[1] - pv[1])
+                            if d < best_dist and d <= 450.0:
+                                if is_segment_clear(pu, pv, walls, circle_obstacles, rect_obstacles):
+                                    if is_segment_walkable(pu, pv, rooms, corridors, tolerance=8.0):
+                                        best_dist = d
+                                        best_pair = (u, v)
+                    if best_pair is not None:
+                        add_edge(best_pair[0], best_pair[1], force=True)
 
     edges_payload = list(edges_set)
     return nodes, edges_payload

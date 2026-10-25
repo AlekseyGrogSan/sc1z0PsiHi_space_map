@@ -2,14 +2,16 @@ import asyncio
 import os
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import async_session_factory, get_db
+from app.models.floor import Floor
 from app.models.panorama import Panorama, PanoramaHotspot, UploadSession
+from app.models.poi import POI, POICategory
 from app.schemas.media import (
     MediaProcessStatusResponse,
     PresignedUploadRequest,
@@ -157,6 +159,107 @@ async def create_panorama(
         status="pending_upload",
     )
     db.add(panorama)
+    await db.commit()
+    await db.refresh(panorama)
+    return panorama
+
+@router.post(
+    "/floors/{floor_id}/panoramas/upload",
+    response_model=PanoramaResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_floor_panorama(
+    floor_id: uuid.UUID,
+    file: UploadFile = File(...),
+    title: str = Form("Панорама 360°"),
+    x_coord: float = Form(0.0),
+    y_coord: float = Form(0.0),
+    initial_heading: float = Form(0.0),
+    poi_id: Optional[uuid.UUID] = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Прямая загрузка 360-градусной фотографии (JPG/PNG/WebP).
+    1. Проверяет существование этажа.
+    2. Создает запись Panorama.
+    3. Вычисляет BlurHash, превью WebP и нарезку Cubemap граней.
+    4. Загружает артефакты в публичное S3 хранилище.
+    5. Привязывает к существующей POI или создает новую POI с panorama_id.
+    """
+    floor = await db.get(Floor, floor_id)
+    if not floor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Floor not found")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file uploaded")
+
+    panorama = Panorama(
+        floor_id=floor_id,
+        title=title,
+        x_coord=x_coord,
+        y_coord=y_coord,
+        initial_heading=initial_heading,
+        status="processing",
+    )
+    db.add(panorama)
+    await db.commit()
+    await db.refresh(panorama)
+
+    try:
+        def _compute():
+            bhash = image_service.compute_blurhash(raw_bytes)
+            prev = image_service.generate_preview_webp(raw_bytes)
+            cubemap = image_service.slice_equirectangular_to_cubemap(raw_bytes, face_size=512)
+            return bhash, prev, cubemap
+
+        bhash, preview_webp, cubemap_faces = await asyncio.to_thread(_compute)
+
+        preview_key = f"panoramas/{panorama.id}/preview.webp"
+        original_key = f"panoramas/{panorama.id}/original.webp"
+        cubemap_prefix = f"panoramas/{panorama.id}/cubemap"
+
+        await s3_service.put_bytes(settings.S3_BUCKET_PUBLIC, original_key, raw_bytes, file.content_type or "image/jpeg")
+        await s3_service.put_bytes(settings.S3_BUCKET_PUBLIC, preview_key, preview_webp, "image/webp")
+
+        for face, face_bytes in cubemap_faces.items():
+            face_key = f"{cubemap_prefix}/l1/{face}_0_0.webp"
+            await s3_service.put_bytes(settings.S3_BUCKET_PUBLIC, face_key, face_bytes, "image/webp")
+
+        panorama.status = "ready"
+        panorama.blurhash = bhash
+        panorama.preview_key = preview_key
+        panorama.original_key = original_key
+        panorama.cubemap_prefix = cubemap_prefix
+        panorama.error_message = None
+
+    except Exception as e:
+        panorama.status = "failed"
+        panorama.error_message = str(e)
+        await db.commit()
+        await db.refresh(panorama)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Ошибка обработки 360-панорамы: {str(e)}"
+        )
+
+    # Привязка или создание POI
+    if poi_id:
+        target_poi = await db.get(POI, poi_id)
+        if target_poi:
+            target_poi.panorama_id = panorama.id
+    else:
+        new_poi = POI(
+            floor_id=floor_id,
+            panorama_id=panorama.id,
+            title=title,
+            category=POICategory.CUSTOM,
+            description="Точка обзора 360°",
+            x_coord=x_coord,
+            y_coord=y_coord,
+        )
+        db.add(new_poi)
+
     await db.commit()
     await db.refresh(panorama)
     return panorama

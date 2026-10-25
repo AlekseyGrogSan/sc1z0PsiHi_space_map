@@ -223,6 +223,111 @@ async def test_route_from_room_to_room_arbitrary_start_avoids_walls(
         assert is_segment_clear(p1, p2, [dividing_wall], [], []), f"Отрезок {p1}->{p2} режет стену!"
 
 
+@pytest.mark.asyncio
+async def test_route_between_rooms_with_many_walls_and_partitions(
+    client: AsyncClient, auth_headers: dict
+):
+    """
+    Проверяет, что при сложной планировке с множеством внутренних стен и перегородок
+    (комнаты разделены на боксы/кабинеты и соединены дверным проёмом)
+    маршрут между комнатами успешно строится через дверные проёмы и огибает все перегородки.
+    """
+    # 1. Пространство и этаж
+    space_resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Бизнес-центр со множеством стен", "slug": "many-walls-bc"},
+    )
+    space_id = space_resp.json()["id"]
+
+    layout = {
+        "rooms": [
+            {"id": "room_a", "title": "Офис А", "x": 100, "y": 100, "width": 300, "height": 400},
+            {"id": "room_b", "title": "Офис Б", "x": 450, "y": 100, "width": 350, "height": 400},
+        ],
+        "walls": [
+            # Внешние стены Офиса А
+            {"x1": 100, "y1": 100, "x2": 400, "y2": 100},
+            {"x1": 100, "y1": 100, "x2": 100, "y2": 500},
+            {"x1": 100, "y1": 500, "x2": 400, "y2": 500},
+            # Разделительная стена Офиса А с дверным проемом справа (y: 260..340)
+            {"x1": 400, "y1": 100, "x2": 400, "y2": 260},
+            {"x1": 400, "y1": 340, "x2": 400, "y2": 500},
+            # Внутренние стены-перегородки Офиса А (кабинеты)
+            {"x1": 100, "y1": 200, "x2": 280, "y2": 200},  # перегородка 1
+            {"x1": 100, "y1": 350, "x2": 280, "y2": 350},  # перегородка 2
+            {"x1": 280, "y1": 200, "x2": 280, "y2": 260},  # перегородка 3
+
+            # Внешние стены Офиса Б со входом слева (x: 450, y: 260..340)
+            {"x1": 450, "y1": 100, "x2": 800, "y2": 100},
+            {"x1": 800, "y1": 100, "x2": 800, "y2": 500},
+            {"x1": 450, "y1": 500, "x2": 800, "y2": 500},
+            {"x1": 450, "y1": 100, "x2": 450, "y2": 260},
+            {"x1": 450, "y1": 340, "x2": 450, "y2": 500},
+            # Внутренние стены-перегородки Офиса Б (кабинеты)
+            {"x1": 580, "y1": 100, "x2": 580, "y2": 300},  # перегородка 4
+            {"x1": 580, "y1": 380, "x2": 580, "y2": 500},  # перегородка 5
+            {"x1": 680, "y1": 200, "x2": 800, "y2": 200},  # перегородка 6
+        ],
+        "corridors": [
+            # Коридорный проход между двумя офисами
+            {"x1": 400, "y1": 300, "x2": 450, "y2": 300, "width": 60},
+        ],
+        "obstacles": [],
+    }
+
+    floor_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/floors",
+        headers=auth_headers,
+        json={
+            "floor_number": 1,
+            "title": "1 этаж со стенами",
+            "ppm": 20.0,
+            "layout_data": layout,
+        },
+    )
+    floor_id = floor_resp.json()["id"]
+
+    # Точка в глубине кабинета Офиса Б
+    poi_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/pois",
+        headers=auth_headers,
+        json={"title": "Кабинет Директора", "category": "stand", "x_coord": 750.0, "y_coord": 150.0},
+    )
+    poi_id = poi_resp.json()["id"]
+
+    # Автогенерация графа
+    auto_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/navigation/auto-graph",
+        headers=auth_headers,
+    )
+    assert auto_resp.status_code == 200
+    graph = auto_resp.json()["graph"]
+    assert len(graph["nodes"]) > 10
+
+    # Строим маршрут из дальнего угла Офиса А (150, 150) за перегородками до Директора (750, 150)
+    route_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/navigation/route",
+        json={
+            "floor_id": floor_id,
+            "x": 150.0,
+            "y": 150.0,
+            "to_poi_id": poi_id,
+        },
+    )
+    assert route_resp.status_code == 200, f"Маршрут не построен: {route_resp.text}"
+    route = route_resp.json()
+    assert route["total_distance_meters"] > 0
+    points = route["points"]
+    assert len(points) >= 4  # Должен пройти несколько поворотов вокруг стен и проём
+
+    # Проверяем, что ни одно ребро маршрута не пересекает ни одну стену
+    for k in range(len(points) - 1):
+        p1 = (points[k]["x"], points[k]["y"])
+        p2 = (points[k + 1]["x"], points[k + 1]["y"])
+        assert is_segment_clear(p1, p2, layout["walls"], [], []), f"Ребро {p1}->{p2} режет стену!"
+
+
 def test_auto_graph_handles_negative_and_extended_coordinates():
     """
     Проверяет, что при отрицательных координатах (например, комната слева от 0)

@@ -473,6 +473,60 @@ def _choose_route(
             best = direct
 
     if best is None:
+        # Fallback: пробуем все видимые узлы этажа старта и этажа цели
+        start_floor_nodes = [n for n in ctx.nodes.values() if n.floor_id == start_floor.id]
+        target_floor_nodes = [n for n in ctx.nodes.values() if n.floor_id == target_floor.id]
+        all_vis_starts = [
+            n.id for n in start_floor_nodes
+            if is_segment_clear((req.x, req.y), (n.x, n.y), s_walls, s_circles, s_rects)
+        ]
+        all_vis_targets = [
+            n.id for n in target_floor_nodes
+            if is_segment_clear((n.x, n.y), (poi.x_coord, poi.y_coord), t_walls, t_circles, t_rects)
+        ]
+        if all_vis_starts and all_vis_targets:
+            fb_target_set = set(all_vis_targets)
+            for sid in all_vis_starts:
+                res = astar(
+                    sid,
+                    fb_target_set,
+                    ctx.nodes,
+                    ctx.adjacency,
+                    accessible_only=req.wheelchair_accessible_only,
+                )
+                if res is not None:
+                    eid = res.node_ids[-1]
+                    s_node = ctx.nodes[sid]
+                    e_node = ctx.nodes[eid]
+                    app_m = euclidean_px(req.x, req.y, s_node.x, s_node.y) / start_floor.ppm
+                    ex_m = euclidean_px(e_node.x, e_node.y, poi.x_coord, poi.y_coord) / target_floor.ppm
+                    cand = _Candidate(
+                        total_meters=app_m + res.total_meters + ex_m,
+                        start_node_id=sid,
+                        end_node_id=eid,
+                        path_node_ids=res.node_ids,
+                        path_edge_ids=res.edge_ids,
+                        approach_meters=app_m,
+                        exit_meters=ex_m,
+                    )
+                    if best is None or cand.total_meters < best.total_meters:
+                        best = cand
+
+    if best is None and start_floor.id == target_floor.id:
+        # Прямой проход, если между точками нет ни одной стены и препятствия
+        if is_segment_clear((req.x, req.y), (poi.x_coord, poi.y_coord), s_walls, s_circles, s_rects):
+            dist_m = euclidean_px(req.x, req.y, poi.x_coord, poi.y_coord) / start_floor.ppm
+            best = _Candidate(
+                total_meters=dist_m,
+                start_node_id=None,
+                end_node_id=None,
+                path_node_ids=[],
+                path_edge_ids=[],
+                approach_meters=dist_m,
+                exit_meters=0.0,
+            )
+
+    if best is None:
         detail = (
             "Доступный маршрут без лестниц не найден"
             if req.wheelchair_accessible_only

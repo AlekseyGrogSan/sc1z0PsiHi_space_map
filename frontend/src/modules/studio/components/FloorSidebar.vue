@@ -5,7 +5,7 @@ import {
   MousePointer2, Square, Minus, Circle, Box, Footprints, MapPin,
   Zap, Eye, EyeOff, Sliders, Ruler, Trash2,
   Layers, Plus, Check, X, Upload, Shapes, Wand2, Magnet,
-  RotateCw, RotateCcw
+  RotateCw, RotateCcw, Camera
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -91,6 +91,7 @@ const BUILDER_MODES = [
   { id: 'rect', label: 'Препятствие / Стенд', icon: Box, color: 'text-amber-400', bg: 'rgba(245,158,11,0.15)' },
   { id: 'corridor', label: 'Проход / Коридор', icon: Footprints, color: 'text-emerald-400', bg: 'rgba(16,185,129,0.15)' },
   { id: 'poi', label: 'Точка интереса (POI)', icon: MapPin, color: 'text-rose-400', bg: 'rgba(244,63,94,0.15)' },
+  { id: 'panorama', label: 'Панорама 360°', icon: Camera, color: 'text-purple-400', bg: 'rgba(168,85,247,0.15)' },
 ]
 </script>
 

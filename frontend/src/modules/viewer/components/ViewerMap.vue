@@ -129,6 +129,7 @@ function createMarkerHtml(poi: POI, isSelected: boolean): string {
   return `
     <div class="poi-marker-wrap flex flex-col items-center pointer-events-auto">
       <div style="
+        position: relative;
         width: ${size}px;
         height: ${size}px;
         background-color: ${cfg.bg};
@@ -142,6 +143,22 @@ function createMarkerHtml(poi: POI, isSelected: boolean): string {
         ${ringStyle}
       ">
         ${getCategoryIconSvg(poi.category, iconSize)}
+        ${poi.panorama_id ? `
+          <div style="
+            position: absolute;
+            top: -5px;
+            right: -7px;
+            background: #a855f7;
+            color: #ffffff;
+            font-size: 8.5px;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 9999px;
+            border: 1px solid rgba(255,255,255,0.8);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            line-height: 1.1;
+          ">360°</div>
+        ` : ''}
       </div>
       <div class="poi-label mt-1 px-1.5 py-0.5 rounded bg-slate-900/80 backdrop-blur-sm border border-slate-700/60 text-center text-slate-200 pointer-events-none select-none transition-all">
         <span class="poi-label-text block font-medium leading-tight">${poi.title}</span>
@@ -357,12 +374,13 @@ function initMap() {
   // Инициализация Leaflet с L.CRS.Simple
   map = L.map(mapContainer.value, {
     crs: L.CRS.Simple,
-    minZoom: -1.5,
-    maxZoom: 2,
+    minZoom: -3,
+    maxZoom: 3,
     zoomSnap: 0.25,
     attributionControl: false,
     zoomControl: false,
   })
+  map.dragging.enable()
 
   layoutGroup = L.layerGroup().addTo(map)
   markerGroup = L.layerGroup().addTo(map)
@@ -375,10 +393,10 @@ function initMap() {
 
     // Игнорируем клики в далекой темной пустоте за границами пространства
     if (
-      rawX < bounds.minX - 100 ||
-      rawX > bounds.maxX + 100 ||
-      rawY < bounds.minY - 100 ||
-      rawY > bounds.maxY + 100
+      rawX < bounds.minX - 400 ||
+      rawX > bounds.maxX + 400 ||
+      rawY < bounds.minY - 400 ||
+      rawY > bounds.maxY + 400
     ) {
       return
     }
@@ -431,11 +449,8 @@ function renderFloorPlan() {
     [floorHeight, floorWidth],
   ]
 
-  const navBounds = getFloorNavigableBounds(props.floor)
-  map.setMaxBounds([
-    [navBounds.minY - 150, navBounds.minX - 150],
-    [navBounds.maxY + 150, navBounds.maxX + 150],
-  ])
+  // Свободное панорамирование без жесткой блокировки камеры leafleat setMaxBounds
+  map.setMaxBounds(null as any)
 
   // Фоновая подложка чертежа (если загружена)
   const rawPlanUrl = props.floor.plan_image_url || (props.floor as any).plan_url

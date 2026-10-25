@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { poisApi } from '../../../api'
-import { X, MapPin } from 'lucide-vue-next'
+import { poisApi, panoramaApi } from '../../../api'
+import { X, MapPin, Camera, Upload } from 'lucide-vue-next'
 
 const props = defineProps({
   floorId: [String, Number],
@@ -30,21 +30,43 @@ const form = reactive({
   category: 'stand',
   description: '',
 })
+const selectedFile = ref(null)
 const loading = ref(false)
 const error = ref('')
+
+function onFileChange(e) {
+  const file = e.target.files?.[0]
+  if (file) {
+    selectedFile.value = file
+  }
+}
 
 async function handleCreate() {
   if (!form.name) return
   loading.value = true
   error.value = ''
   try {
-    await poisApi.create(props.floorId, {
-      title: form.name,
-      category: form.category,
-      description: form.description,
-      x_coord: props.coords.x,
-      y_coord: props.coords.y,
-    })
+    let panoId = null
+    if (selectedFile.value) {
+      const formData = new FormData()
+      formData.append('file', selectedFile.value)
+      formData.append('title', form.name)
+      formData.append('x_coord', props.coords.x)
+      formData.append('y_coord', props.coords.y)
+      const res = await panoramaApi.upload(props.floorId, formData)
+      panoId = res.data?.id
+    }
+
+    if (!selectedFile.value) {
+      await poisApi.create(props.floorId, {
+        title: form.name,
+        category: form.category,
+        description: form.description,
+        x_coord: props.coords.x,
+        y_coord: props.coords.y,
+        panorama_id: panoId,
+      })
+    }
     emit('created')
   } catch (e) {
     error.value = e.response?.data?.detail || 'Ошибка создания'
@@ -81,6 +103,20 @@ async function handleCreate() {
         <div>
           <label class="label">Описание</label>
           <textarea v-model="form.description" class="input resize-none" rows="2" placeholder="Краткое описание..."></textarea>
+        </div>
+
+        <div>
+          <label class="label flex items-center gap-1.5 text-xs text-purple-400">
+            <Camera :size="13" />
+            <span>360° Панорама (опционально)</span>
+          </label>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            class="input text-xs py-1"
+            @change="onFileChange"
+          />
+          <p class="text-[10px] text-slate-400 mt-0.5">Прикрепить сферическое фото для 3D-тура</p>
         </div>
 
         <div class="text-xs font-mono px-2 py-1 rounded" style="background: var(--bg-surface); color: var(--text-muted)">

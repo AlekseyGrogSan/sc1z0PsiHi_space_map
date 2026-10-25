@@ -185,3 +185,68 @@ async def test_panorama_lifecycle_and_hotspots(client: AsyncClient, mock_s3):
     # 10. Проверка 404 после удаления
     get_deleted = await client.get(f"/api/v1/panoramas/{p1_id}")
     assert get_deleted.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_direct_floor_panorama_upload(client: AsyncClient, organizer_user, auth_headers, mock_s3):
+    """
+    Проверяет прямой multipart-upload готовой 360-панорамы:
+    - генерация превью, blurhash и кубических граней
+    - сохранение в хранилище и статус ready
+    - автоматическое создание связанной точки POI с panorama_id
+    """
+    # 1. Пространство и этаж
+    space_resp = await client.post(
+        "/api/v1/spaces",
+        headers=auth_headers,
+        json={"title": "Музей 360", "slug": "museum-360"},
+    )
+    space_id = space_resp.json()["id"]
+
+    floor_resp = await client.post(
+        f"/api/v1/spaces/{space_id}/floors",
+        headers=auth_headers,
+        json={"floor_number": 1, "title": "Основной зал", "ppm": 20.0},
+    )
+    floor_id = floor_resp.json()["id"]
+
+    # 2. Создаем тестовое эквидистантное изображение 512x256
+    img = Image.new("RGB", (512, 256), color=(70, 130, 180))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+
+    # 3. Загружаем через прямой multipart endpoint
+    upload_resp = await client.post(
+        f"/api/v1/floors/{floor_id}/panoramas/upload",
+        headers=auth_headers,
+        data={
+            "title": "Панорама центрального зала",
+            "x_coord": 350.0,
+            "y_coord": 220.0,
+            "initial_heading": 45.0,
+        },
+        files={
+            "file": ("hall_360.jpg", buf.getvalue(), "image/jpeg"),
+        },
+    )
+    assert upload_resp.status_code == 201, f"Ошибка загрузки: {upload_resp.text}"
+    pano_data = upload_resp.json()
+    assert pano_data["status"] == "ready"
+    assert pano_data["title"] == "Панорама центрального зала"
+    assert pano_data["x_coord"] == 350.0
+    assert pano_data["y_coord"] == 220.0
+    assert pano_data["preview_key"] is not None
+    assert pano_data["original_key"] is not None
+    assert pano_data["cubemap_prefix"] is not None
+
+    # 4. Проверяем, что создалась привязанная POI на этаже
+    pois_resp = await client.get(f"/api/v1/floors/{floor_id}/pois", headers=auth_headers)
+    assert pois_resp.status_code == 200
+    floor_pois = pois_resp.json()
+    assert len(floor_pois) == 1
+    poi = floor_pois[0]
+    assert poi["title"] == "Панорама центрального зала"
+    assert poi["panorama_id"] == pano_data["id"]
+    assert poi["x_coord"] == 350.0
+    assert poi["y_coord"] == 220.0

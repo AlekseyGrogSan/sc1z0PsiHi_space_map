@@ -6,9 +6,10 @@ import { resolveMediaUrl } from '../../../api/client'
 import FloorSidebar from '../components/FloorSidebar.vue'
 import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
+import AddPanoramaModal from '../components/AddPanoramaModal.vue'
 import {
   ArrowLeft, Layers, Trash2, Check, X, Square, Minus, Circle, Box,
-  Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler, Shapes, Wand2, Magnet
+  Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler, Shapes, Wand2, Magnet, Camera
 } from 'lucide-vue-next'
 
 const props = defineProps({ spaceId: String, floorId: String })
@@ -23,9 +24,10 @@ const navNodes = ref([])
 const navEdges = ref([])
 const layoutData = ref({ rooms: [], walls: [], obstacles: [], corridors: [] })
 const loading = ref(true)
-const mode = ref('view') // 'view' | 'room' | 'poly-room' | 'wall' | 'circle' | 'rect' | 'corridor' | 'poi'
+const mode = ref('view') // 'view' | 'room' | 'poly-room' | 'wall' | 'circle' | 'rect' | 'corridor' | 'poi' | 'panorama'
 const showUpload = ref(false)
 const addPoiModal = ref(null) // { x, y } in pixel coords
+const addPanoramaModal = ref(null) // { x, y } in pixel coords
 const addRoomModal = ref(null) // { p1, p2, points, title, color }
 const addCircleModal = ref(null) // { lat, lng, radius, title }
 const selectedElement = ref(null) // { type, item }
@@ -622,14 +624,16 @@ function drawPois() {
 
   pois.value.forEach(poi => {
     const isSel = selectedElement.value?.type === 'poi' && selectedElement.value?.item?.id === poi.id
-    const emoji = CATEGORY_ICONS[poi.category] || '📍'
+    const hasPano = !!poi.panorama_id
+    const emoji = hasPano ? '📷' : (CATEGORY_ICONS[poi.category] || '📍')
     const poiTitle = poi.title || poi.name || ''
     const icon = L.divIcon({
       className: '',
       html: `
-        <div class="poi-marker ${isSel ? 'selected' : ''}" data-id="${poi.id}" title="${poiTitle}">
+        <div class="poi-marker ${isSel ? 'selected' : ''} ${hasPano ? 'has-pano' : ''}" data-id="${poi.id}" title="${poiTitle}">
           <span class="poi-icon-box">${emoji}</span>
           <span class="poi-name-tag">${poiTitle}</span>
+          ${hasPano ? '<span class="poi-pano-tag" style="background:#a855f7;color:white;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:9999px;position:absolute;top:-6px;right:-8px;border:1px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.5);">360°</span>' : ''}
         </div>
       `,
       iconAnchor: [16, 16],
@@ -1073,6 +1077,14 @@ function onMapClick(e) {
     const cx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
     const cy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
     addPoiModal.value = { x: cx, y: cy }
+    return
+  }
+
+  if (mode.value === 'panorama') {
+    const b = getFloorNavigableBounds()
+    const cx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
+    const cy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
+    addPanoramaModal.value = { x: cx, y: cy }
     return
   }
 
@@ -1826,6 +1838,13 @@ async function onPoiAdded() {
   isGraphDirty.value = true
 }
 
+async function onPanoramaAdded() {
+  addPanoramaModal.value = null
+  await loadFloorData()
+  isGraphDirty.value = true
+  await triggerAutoGraph(false)
+}
+
 async function onFloorSelected(floor) {
   if (floor.id === currentFloor.value?.id) return
   currentFloor.value = floor
@@ -2160,6 +2179,7 @@ onBeforeUnmount(() => {
         <span v-if="mode === 'corridor' && drawingPoint" class="text-amber-300 truncate">Кликните конец коридора</span>
 
         <span v-if="mode === 'poi'" class="text-slate-100 truncate">Кликните для установки POI</span>
+        <span v-if="mode === 'panorama'" class="text-purple-300 truncate">Кликните для установки 360° панорамы</span>
 
         <button @click="mode = 'view'; cancelDrawing()" class="btn btn-ghost px-2 py-0.5 text-xs text-slate-400 hover:text-white shrink-0 ml-1">
           ✕
@@ -2178,6 +2198,12 @@ onBeforeUnmount(() => {
             {{ selectedElement.type === 'corridor' ? 'Коридор' : '' }}
             {{ selectedElement.type === 'poi' ? `Точка "${selectedElement.item.title}"` : '' }}
           </b>
+          <span
+            v-if="selectedElement.type === 'poi' && selectedElement.item.panorama_id"
+            class="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold"
+          >
+            <Camera :size="10" /> 360° Панорама
+          </span>
         </div>
 
         <!-- Corridor Width Control -->
@@ -2277,6 +2303,15 @@ onBeforeUnmount(() => {
       :coords="addPoiModal"
       @close="addPoiModal = null"
       @created="onPoiAdded"
+    />
+
+    <!-- Add 360 Panorama Modal -->
+    <AddPanoramaModal
+      v-if="addPanoramaModal && currentFloor"
+      :floor-id="currentFloor.id"
+      :coords="addPanoramaModal"
+      @close="addPanoramaModal = null"
+      @created="onPanoramaAdded"
     />
 
     <!-- Add Room Modal -->
