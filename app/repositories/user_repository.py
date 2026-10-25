@@ -21,6 +21,16 @@ class UserRepository:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_email_or_username(self, db: AsyncSession, identifier: str) -> Optional[User]:
+        clean = identifier.strip()
+        user = await self.get_by_email(db, clean)
+        if user:
+            return user
+        from sqlalchemy import func
+        stmt = select(User).where(func.lower(User.full_name) == clean.lower())
+        result = await db.execute(stmt)
+        return result.scalars().first()
+
     async def create(
         self,
         db: AsyncSession,

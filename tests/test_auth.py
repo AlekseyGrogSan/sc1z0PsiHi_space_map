@@ -107,3 +107,34 @@ async def test_get_me(client: AsyncClient, auth_headers: dict):
     data = response.json()
     assert data["email"] == "organizer@example.com"
     assert "accessible_spaces" in data
+
+
+@pytest.mark.asyncio
+async def test_login_by_username_success(client: AsyncClient):
+    # Регистрируем пользователя с username (full_name) "organizer2026"
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "user_with_login@test.com",
+            "password": "Password123!",
+            "full_name": "organizer2026",
+        },
+    )
+    assert reg_resp.status_code == 201
+
+    # Вход по email успешен
+    email_login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "user_with_login@test.com", "password": "Password123!"},
+    )
+    assert email_login.status_code == 200
+    assert "access_token" in email_login.json()
+
+    # Вход по логину (username / full_name) также успешен
+    username_login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "organizer2026", "password": "Password123!"},
+    )
+    assert username_login.status_code == 200
+    assert "access_token" in username_login.json()
+

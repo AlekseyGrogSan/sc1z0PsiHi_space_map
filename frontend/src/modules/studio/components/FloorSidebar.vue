@@ -35,13 +35,17 @@ const props = defineProps({
     type: Object,
     default: () => ({ rooms: 0, walls: 0, obstacles: 0, corridors: 0, pois: 0 }),
   },
+  corridorWidth: {
+    type: Number,
+    default: 35,
+  },
 })
 
 const emit = defineEmits([
   'select-floor', 'floor-created', 'upload-plan', 'set-mode',
   'auto-graph', 'toggle-show-graph', 'update:blueprintOpacity',
   'clear-layout', 'start-calib', 'save-calib', 'cancel-calib',
-  'update:calibDistance', 'delete-plan', 'close-mobile',
+  'update:calibDistance', 'update:corridorWidth', 'delete-plan', 'close-mobile',
 ])
 
 const showAddFloor = ref(false)
@@ -174,6 +178,43 @@ const BUILDER_MODES = [
         <p v-if="mode === 'rect'">💡 <b>Препятствие:</b> кликните два угла прямоугольного стенда или киоска.</p>
         <p v-if="mode === 'corridor'">💡 <b>Проход / Коридор:</b> кликните начало и конец основного прохода для приоритетной трассировки.</p>
         <p v-if="mode === 'poi'">💡 <b>POI:</b> кликните на карте для создания точки (вход, выход, лавочка, урна, магазин...).</p>
+      </div>
+
+      <!-- Corridor Width Settings -->
+      <div v-if="mode === 'corridor'" class="mt-3 p-3 rounded-lg space-y-2.5" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25)">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-medium text-emerald-400">Ширина прохода:</span>
+          <b class="font-mono text-emerald-300 font-bold">{{ corridorWidth }} px</b>
+        </div>
+        <input
+          type="range"
+          min="15"
+          max="120"
+          step="5"
+          :value="corridorWidth"
+          @input="$emit('update:corridorWidth', Number($event.target.value))"
+          class="w-full accent-emerald-500 cursor-pointer h-1.5 rounded-lg bg-slate-700"
+        />
+        <div class="grid grid-cols-3 gap-1.5 text-[11px]">
+          <button
+            type="button"
+            @click="$emit('update:corridorWidth', 20)"
+            class="px-2 py-1 rounded text-center transition-all cursor-pointer"
+            :style="corridorWidth === 20 ? 'background: #10b981; color: white;' : 'background: var(--bg-surface); color: var(--text-muted)'"
+          >20px</button>
+          <button
+            type="button"
+            @click="$emit('update:corridorWidth', 35)"
+            class="px-2 py-1 rounded text-center transition-all cursor-pointer"
+            :style="corridorWidth === 35 ? 'background: #10b981; color: white;' : 'background: var(--bg-surface); color: var(--text-muted)'"
+          >35px</button>
+          <button
+            type="button"
+            @click="$emit('update:corridorWidth', 60)"
+            class="px-2 py-1 rounded text-center transition-all cursor-pointer"
+            :style="corridorWidth === 60 ? 'background: #10b981; color: white;' : 'background: var(--bg-surface); color: var(--text-muted)'"
+          >60px</button>
+        </div>
       </div>
     </div>
 

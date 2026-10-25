@@ -62,11 +62,11 @@ async def login(
     login_in: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenResponse:
-    user = await user_repo.get_by_email(db, login_in.username)
+    user = await user_repo.get_by_email_or_username(db, login_in.username)
     if not user or not await check_password(login_in.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username, email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

@@ -8,7 +8,7 @@ import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
 import {
   ArrowLeft, Layers, Trash2, Check, X, Square, Minus, Circle, Box,
-  Footprints, MapPin, Zap, Eye, RotateCcw, Copy
+  Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler
 } from 'lucide-vue-next'
 
 const props = defineProps({ spaceId: String, floorId: String })
@@ -30,6 +30,7 @@ const addRoomModal = ref(null) // { p1, p2, title, color }
 const addCircleModal = ref(null) // { lat, lng, radius, title }
 const selectedElement = ref(null) // { type, item }
 const drawingPoint = ref(null) // { lat, lng } start point for 2-click drawing
+const corridorWidth = ref(35) // Width of corridor in px
 const isMobileSidebarOpen = ref(false) // Mobile tools drawer state
 
 // Blueprint & Graph options
@@ -231,6 +232,11 @@ function attachShapeDrag(layer, { onDrag, onDragEnd, onClick }) {
   })
 
   layer.on('click', (e) => {
+    if (calibrating.value) {
+      window.L.DomEvent.stopPropagation(e)
+      handleCalibClick(e.latlng.lat, e.latlng.lng)
+      return
+    }
     if (mode.value !== 'view') return
     window.L.DomEvent.stopPropagation(e)
     if (justDragged) return
@@ -778,7 +784,7 @@ function onMapClick(e) {
         y1: Math.round(p1.lat),
         x2: Math.round(p2.lng),
         y2: Math.round(p2.lat),
-        width: 24,
+        width: Number(corridorWidth.value) || 35,
       }
       layoutData.value.corridors = [...(layoutData.value.corridors || []), newCorr]
       drawingPoint.value = null
@@ -853,7 +859,7 @@ function onMapMouseMove(e) {
   } else if (mode.value === 'corridor') {
     L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
       color: 'rgba(59, 130, 246, 0.4)',
-      weight: 24,
+      weight: Number(corridorWidth.value) || 35,
       lineCap: 'round',
     }).addTo(previewLayer)
   } else if (mode.value === 'room') {
@@ -1036,6 +1042,9 @@ async function handleClearLayout() {
 
 // Calibration
 function startCalibration() {
+  mode.value = 'view'
+  cancelDrawing()
+  selectedElement.value = null
   calibrating.value = true
   calibPoints = []
   calibResult.value = null
@@ -1045,7 +1054,13 @@ function startCalibration() {
 function handleCalibClick(lat, lng) {
   if (!window.L || !calibLayer) return
   calibPoints.push({ lat, lng })
-  const dot = window.L.circleMarker([lat, lng], { radius: 5, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 })
+  const dot = window.L.circleMarker([lat, lng], {
+    radius: 6,
+    color: '#ffffff',
+    weight: 2,
+    fillColor: '#f59e0b',
+    fillOpacity: 1,
+  })
   calibLayer.addLayer(dot)
 
   if (calibPoints.length === 2) {
@@ -1053,14 +1068,25 @@ function handleCalibClick(lat, lng) {
     const dy = calibPoints[1].lat - calibPoints[0].lat
     const pixels = Math.sqrt(dx * dx + dy * dy)
     calibResult.value = { pixels }
-    window.L.polyline([[calibPoints[0].lat, calibPoints[0].lng], [calibPoints[1].lat, calibPoints[1].lng]], { color: '#f59e0b', weight: 2 }).addTo(calibLayer)
+    window.L.polyline(
+      [[calibPoints[0].lat, calibPoints[0].lng], [calibPoints[1].lat, calibPoints[1].lng]],
+      { color: '#f59e0b', weight: 3, dashArray: '6, 6' }
+    ).addTo(calibLayer)
     calibrating.value = false
+    if (!calibDistance.value) {
+      calibDistance.value = '1.0'
+    }
   }
 }
 
 async function saveCalibration() {
-  if (!calibResult.value || !calibDistance.value) return
-  const ppm = calibResult.value.pixels / parseFloat(calibDistance.value)
+  if (!calibResult.value || !calibDistance.value || !currentFloor.value) return
+  const dist = parseFloat(calibDistance.value)
+  if (isNaN(dist) || dist <= 0) {
+    alert('Пожалуйста, укажите положительное реальное расстояние в метрах')
+    return
+  }
+  const ppm = calibResult.value.pixels / dist
   try {
     await floorsApi.update(currentFloor.value.id, { ppm })
     currentFloor.value.ppm = ppm
@@ -1068,10 +1094,33 @@ async function saveCalibration() {
     calibResult.value = null
     calibDistance.value = ''
     calibLayer?.clearLayers()
-    alert(`Масштаб сохранён: ${ppm.toFixed(2)} px/м`)
+    alert(`Масштаб успешно сохранён: ${ppm.toFixed(2)} px/м`)
+    await loadFloorData()
   } catch (e) {
     console.error('Ошибка сохранения масштаба:', e)
+    alert('Ошибка при сохранении масштаба')
   }
+}
+
+// Adjust corridor width or circle radius for selected elements
+function changeCorridorWidth(delta) {
+  if (selectedElement.value?.type !== 'corridor') return
+  const item = selectedElement.value.item
+  const cur = item.width || 35
+  item.width = Math.max(10, Math.min(200, cur + delta))
+  drawCorridors()
+  drawSelectionHandles()
+  saveLayoutData(true)
+}
+
+function changeCircleRadius(delta) {
+  if (selectedElement.value?.type !== 'obstacle' || selectedElement.value.item.type !== 'circle') return
+  const item = selectedElement.value.item
+  const cur = item.radius || 30
+  item.radius = Math.max(10, Math.min(250, cur + delta))
+  drawObstacles()
+  drawSelectionHandles()
+  saveLayoutData(true)
 }
 
 // Event handlers
@@ -1251,6 +1300,8 @@ onBeforeUnmount(() => {
         :graphStats="graphStats"
         :generatingGraph="generatingGraph"
         :layoutCounts="layoutCounts"
+        :corridorWidth="corridorWidth"
+        @update:corridorWidth="corridorWidth = $event"
         v-model:calibDistance="calibDistance"
         @select-floor="onFloorSelected"
         @floor-created="onFloorCreated"
@@ -1260,7 +1311,7 @@ onBeforeUnmount(() => {
         @toggle-show-graph="toggleShowGraph"
         @update:blueprintOpacity="updateBlueprintOpacity"
         @clear-layout="handleClearLayout"
-        @start-calib="startCalibration; isMobileSidebarOpen = false"
+        @start-calib="startCalibration(); isMobileSidebarOpen = false"
         @save-calib="saveCalibration"
         @cancel-calib="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null"
         @delete-plan="onDeletePlan"
@@ -1331,6 +1382,23 @@ onBeforeUnmount(() => {
             {{ selectedElement.type === 'poi' ? `Точка "${selectedElement.item.title}"` : '' }}
           </b>
         </div>
+
+        <!-- Corridor Width Control -->
+        <div v-if="selectedElement.type === 'corridor'" class="flex items-center gap-1.5 bg-slate-800/90 px-2 py-1 rounded-lg border border-emerald-500/30">
+          <span class="text-[11px] text-emerald-300 font-medium">Ширина:</span>
+          <button @click="changeCorridorWidth(-5)" class="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Уменьшить ширину">-</button>
+          <span class="font-mono text-emerald-400 font-bold px-1">{{ selectedElement.item.width || 35 }} px</span>
+          <button @click="changeCorridorWidth(5)" class="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Увеличить ширину">+</button>
+        </div>
+
+        <!-- Column Radius Control -->
+        <div v-if="selectedElement.type === 'obstacle' && selectedElement.item.type === 'circle'" class="flex items-center gap-1.5 bg-slate-800/90 px-2 py-1 rounded-lg border border-cyan-500/30">
+          <span class="text-[11px] text-cyan-300 font-medium">Радиус:</span>
+          <button @click="changeCircleRadius(-5)" class="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Уменьшить радиус">-</button>
+          <span class="font-mono text-cyan-400 font-bold px-1">{{ selectedElement.item.radius || 30 }} px</span>
+          <button @click="changeCircleRadius(5)" class="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-700 text-slate-300 hover:text-white" title="Увеличить радиус">+</button>
+        </div>
+
         <!-- Nudge / Move Controls -->
         <div class="flex items-center gap-1 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/80">
           <span class="text-[10px] text-slate-400 mr-1 select-none font-mono hidden sm:inline">Сдвиг:</span>
@@ -1352,9 +1420,42 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Calibration Indicator -->
-      <div v-if="calibrating" class="absolute top-4 left-1/2 -translate-x-1/2 z-10 card-glass px-4 py-2 text-sm font-medium text-amber-400 border border-amber-500/30">
-        🎯 {{ calibPoints.length === 0 ? 'Кликните первую точку' : 'Кликните вторую точку' }}
+      <!-- Calibration Active Banner -->
+      <div v-if="calibrating" class="absolute top-4 left-1/2 -translate-x-1/2 z-20 card-glass px-4 py-2.5 rounded-xl text-sm font-semibold text-amber-300 border border-amber-500/40 shadow-2xl backdrop-blur-md flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+        <span>🎯 {{ calibPoints.length === 0 ? 'Кликните первую точку на плане' : 'Кликните вторую точку на плане' }}</span>
+        <button @click="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null" class="ml-2 text-xs text-slate-400 hover:text-white underline cursor-pointer">Отмена</button>
+      </div>
+
+      <!-- Floating Calibration Result Dialog on Map -->
+      <div v-if="calibResult && !calibrating" class="absolute top-4 left-1/2 -translate-x-1/2 z-20 card-glass p-4 rounded-xl shadow-2xl border border-amber-500/50 backdrop-blur-md w-80 text-xs space-y-2.5">
+        <div class="flex items-center justify-between">
+          <b class="text-amber-300 text-sm font-semibold flex items-center gap-1.5">
+            <Ruler :size="15" /> Задать масштаб
+          </b>
+          <button @click="calibResult = null; calibLayer?.clearLayers()" class="text-slate-400 hover:text-white cursor-pointer">✕</button>
+        </div>
+        <p class="text-slate-300">Расстояние на плане: <b class="text-white font-mono">{{ calibResult.pixels.toFixed(1) }} px</b></p>
+        <div>
+          <label class="block text-slate-400 mb-1">Реальное расстояние в метрах:</label>
+          <input
+            type="number"
+            step="0.1"
+            min="0.01"
+            v-model="calibDistance"
+            class="input text-xs py-1.5 w-full font-mono text-emerald-400"
+            placeholder="например 1.0 или 5.5"
+            autofocus
+          />
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button @click="saveCalibration" class="btn btn-primary flex-1 justify-center text-xs py-1.5">
+            <Check :size="14" /> Сохранить
+          </button>
+          <button @click="calibResult = null; calibLayer?.clearLayers()" class="btn btn-ghost text-xs py-1.5">
+            Отмена
+          </button>
+        </div>
       </div>
 
       <!-- Syncing Indicator -->
