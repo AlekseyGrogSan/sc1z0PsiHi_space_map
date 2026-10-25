@@ -40,6 +40,14 @@ class Floor(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # 2D Vector Layout (rooms, walls, corridors, obstacles)
     layout_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)
 
+    @property
+    def width(self) -> int:
+        return self.width_px or 1600
+
+    @property
+    def height(self) -> int:
+        return self.height_px or 900
+
     # Relationships
     space: Mapped["Space"] = relationship("Space", back_populates="floors")
     pois: Mapped[List["POI"]] = relationship(

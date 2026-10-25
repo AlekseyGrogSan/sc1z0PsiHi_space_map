@@ -255,12 +255,12 @@ def _get_floor_navigable_bounds(floor: Floor) -> Tuple[float, float, float, floa
         except (ValueError, TypeError):
             pass
 
-    fw = float(floor.width or 1600.0)
-    fh = float(floor.height or 900.0)
+    fw = float(getattr(floor, "width_px", None) or getattr(floor, "width", None) or 1600.0)
+    fh = float(getattr(floor, "height_px", None) or getattr(floor, "height", None) or 900.0)
     if min_x == float("inf"):
         return 0.0, 0.0, fw, fh
 
-    return max(0.0, min_x), max(0.0, min_y), min(fw, max_x), min(fh, max_y)
+    return min(0.0, min_x), min(0.0, min_y), max(fw, max_x), max(fh, max_y)
 
 
 def _entry_candidates(
@@ -289,9 +289,8 @@ def _entry_candidates(
 
     # Ограничиваем точку общими проходимыми границами этажа (не даем уйти в темную пустоту)
     min_x, min_y, max_x, max_y = _get_floor_navigable_bounds(floor)
-    margin = 5.0
-    x = max(min_x + margin, min(max_x - margin, x))
-    y = max(min_y + margin, min(max_y - margin, y))
+    x = max(min_x, min(max_x, x))
+    y = max(min_y, min(max_y, y))
 
     # Мягко смещаем точку, если она упала внутрь препятствия или стены
     x, y = _snap_to_navigable(x, y, walls_list, circles_list, rects_list, rooms_list)
