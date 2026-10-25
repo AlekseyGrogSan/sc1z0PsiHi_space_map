@@ -160,11 +160,11 @@ function handleMapClick(coords: { x: number; y: number; floor_id: string }) {
 // Перетаскивание маркера старта "A" по карте с автопересчетом
 function handleUpdateOrigin(coords: { x: number; y: number; floor_id: string }) {
   routeOrigin.value = {
-    ...routeOrigin.value,
     x: coords.x,
     y: coords.y,
     floor_id: coords.floor_id,
-    title: routeOrigin.value?.title || `Точка (${coords.x}, ${coords.y})`,
+    title: 'Выбранная точка',
+    poiId: undefined,
   }
   if (routeTarget.value) {
     calculateRoute()

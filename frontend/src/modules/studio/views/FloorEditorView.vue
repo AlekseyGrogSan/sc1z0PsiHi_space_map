@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { floorsApi, poisApi, navApi, spacesApi } from '../../../api'
+import { resolveMediaUrl } from '../../../api/client'
 import FloorSidebar from '../components/FloorSidebar.vue'
 import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
@@ -135,7 +136,7 @@ async function initMap() {
   }
 
   const floor = currentFloor.value
-  const planUrl = floor?.plan_url || floor?.plan_image_url
+  const planUrl = resolveMediaUrl(floor?.plan_url || floor?.plan_image_url)
   const w = floor?.width_px || floor?.width || 1400
   const h = floor?.height_px || floor?.height || 900
 

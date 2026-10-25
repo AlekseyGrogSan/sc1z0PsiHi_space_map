@@ -71,7 +71,8 @@ class PublicFloorRead(BaseModel):
         key = self.plan_optimized_key or self.plan_original_key
         if not key:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{key.lstrip('/')}"
+        return f"{settings.API_V1_STR}/media/public/{key.lstrip('/')}"
+
 
     @computed_field
     def plan_thumb_url(self) -> Optional[str]:
@@ -80,8 +81,8 @@ class PublicFloorRead(BaseModel):
             return None
         if "optimized.webp" in key:
             thumb_key = key.replace("optimized.webp", "thumb.webp")
-            return f"{settings.S3_PUBLIC_URL_PREFIX}/{thumb_key.lstrip('/')}"
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{key.lstrip('/')}"
+            return f"{settings.API_V1_STR}/media/public/{thumb_key.lstrip('/')}"
+        return f"{settings.API_V1_STR}/media/public/{key.lstrip('/')}"
 
 
 class PublicSpaceBundleRead(BaseModel):

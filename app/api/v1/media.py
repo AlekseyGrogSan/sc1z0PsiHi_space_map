@@ -1,7 +1,7 @@
 import os
 import uuid
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -18,6 +18,42 @@ from app.services.image_ops import image_service
 from app.services.s3 import s3_service
 
 router = APIRouter(prefix="/media", tags=["Media & Plans"])
+
+
+@router.get(
+    "/public/{file_path:path}",
+    summary="Публичная отдача медиафайлов из бакета spaces-public (планы этажей, превью, тайлы)",
+)
+async def get_public_media_file(file_path: str):
+    """
+    Отдает файл из публичного S3 бакета напрямую через FastAPI,
+    гарантируя доступность с любого IP/домена без необходимости открывать порт MinIO.
+    """
+    try:
+        content_bytes = await s3_service.get_bytes(settings.S3_BUCKET_PUBLIC, file_path)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Медиафайл '{file_path}' не найден в хранилище",
+        )
+
+    ext = os.path.splitext(file_path)[1].lower()
+    content_type_map = {
+        ".webp": "image/webp",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".pdf": "application/pdf",
+        ".json": "application/json",
+    }
+    content_type = content_type_map.get(ext, "application/octet-stream")
+    return Response(
+        content=content_bytes,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 async def _process_floor_plan_task(floor_id: uuid.UUID, staging_key: str):
     """Фоновая обработка плана этажа: конвертация из PNG/JPG/PDF в WebP, превью и замер размеров."""

@@ -22,6 +22,31 @@ function resolveBaseUrl(): string {
   return envUrl || 'http://localhost:8000/api/v1'
 }
 
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location
+    // Если путь относительный (/api/v1/...), добавляем бэкенд хост
+    if (url.startsWith('/api/v1/')) {
+      return `${protocol}//${hostname}:8000${url}`
+    }
+    // Если URL содержит localhost:9000 (MinIO) или localhost:8000 на удаленном хосте
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      if (url.includes('localhost:9000/spaces-public/')) {
+        const key = url.split('/spaces-public/')[1]
+        return `${protocol}//${hostname}:8000/api/v1/media/public/${key}`
+      }
+      if (url.includes('localhost:8000')) {
+        return url.replace('localhost:8000', `${hostname}:8000`)
+      }
+      if (url.includes('localhost:9000')) {
+        return url.replace('localhost:9000', `${hostname}:9000`)
+      }
+    }
+  }
+  return url
+}
+
 const BASE_URL = resolveBaseUrl()
 
 const apiClient: AxiosInstance = axios.create({

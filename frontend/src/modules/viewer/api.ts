@@ -1,4 +1,4 @@
-import { apiClient } from '../../api/client'
+import { apiClient, resolveMediaUrl } from '../../api/client'
 import type { Space, RoutePoint, RouteResponse, Floor, POI } from './types'
 import { mockSpace, mockFloors, mockPois } from './mocks'
 
@@ -90,7 +90,7 @@ export async function getSpaceBySlug(slug: string): Promise<Space> {
           id: String(f.id || `floor-${idx + 1}`),
           number: typeof f.number === 'number' ? f.number : (f.floor_number ?? (idx + 1)),
           title: f.title || `Этаж ${idx + 1}`,
-          plan_image_url: f.plan_image_url || '',
+          plan_image_url: resolveMediaUrl(f.plan_image_url || f.plan_url || ''),
           width: f.width ?? f.width_px ?? 1400,
           height: f.height ?? f.height_px ?? 900,
           ppm: f.ppm ?? 25.0,

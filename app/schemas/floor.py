@@ -48,4 +48,5 @@ class FloorRead(FloorBase):
         key = self.plan_optimized_key or self.plan_original_key
         if not key:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{key.lstrip('/')}"
+        return f"{settings.API_V1_STR}/media/public/{key.lstrip('/')}"
+

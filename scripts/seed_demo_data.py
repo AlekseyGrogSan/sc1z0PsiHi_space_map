@@ -141,6 +141,94 @@ async def seed():
             db.add(pano)
             print("📸 360° Панорама успешно обработана, нарезана на Cubemap и залита в MinIO!")
 
+        # 5. Создаем демонстрационные POI (вход, стенды, конференц-зал, кофе, WC)
+        from app.models.poi import POI, POICategory
+        stmt = select(POI).where(POI.floor_id == floor.id)
+        existing_pois = (await db.execute(stmt)).scalars().all()
+        if not existing_pois:
+            demo_pois = [
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Главный вход и Регистрация",
+                    category=POICategory.ENTRANCE,
+                    description="Входная зона для гостей и участников выставки",
+                    x_coord=380.0,
+                    y_coord=1140.0,
+                    panorama_id=pano.id if pano else None,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #1: ТТК Цифровые Сервисы",
+                    category=POICategory.STAND,
+                    description="Магистральный интернет, приватные каналы связи и CDN",
+                    x_coord=300.0,
+                    y_coord=235.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #2: IoT и Умный Город",
+                    category=POICategory.STAND,
+                    description="Решения для датчиков, транспорта и умных остановок",
+                    x_coord=700.0,
+                    y_coord=235.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #3: Индор-Навигация",
+                    category=POICategory.STAND,
+                    description="Интерактивные 3D-карты, BLE-маяки и цифровые двойники помещений",
+                    x_coord=1125.0,
+                    y_coord=235.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Конференц-зал «ТрансТелеКом»",
+                    category=POICategory.STAGE,
+                    description="Главный зал на 250 мест, доклады и круглые столы",
+                    x_coord=1600.0,
+                    y_coord=850.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Кофе-брейк & Лаундж Зона",
+                    category=POICategory.FOOD,
+                    description="Горячий кофе, чай, выпечка и зона для нетворкинга",
+                    x_coord=1650.0,
+                    y_coord=220.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Санузлы (WC)",
+                    category=POICategory.WC,
+                    description="Мужские, женские и санузлы для МГН",
+                    x_coord=1575.0,
+                    y_coord=525.0,
+                ),
+            ]
+            for p in demo_pois:
+                db.add(p)
+            await db.flush()
+            print("📍 Добавлено 7 демонстрационных точек интереса (POI)!")
+
+            # 6. Авто-генерация графа путей по демо-данным
+            from app.services.auto_graph import generate_auto_graph
+            from app.repositories.navigation_repository import navigation_repo
+            nodes_payload, edges_payload = generate_auto_graph(
+                width=floor.width_px or 2000,
+                height=floor.height_px or 1200,
+                layout=floor.layout_data or {},
+                pois=demo_pois,
+            )
+            await navigation_repo.replace_floor_graph(db, floor, nodes_payload, edges_payload)
+            print(f"⚡ Навигационный граф построен: {len(nodes_payload)} узлов, {len(edges_payload)} связей!")
+
         await db.commit()
         print("✅ Все демо-данные успешно загружены! Можно тестировать API и фронтенд.")
 
