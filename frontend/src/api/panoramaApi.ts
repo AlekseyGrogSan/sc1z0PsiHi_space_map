@@ -16,6 +16,8 @@ export const panoramaApi = {
 
   createConnection: (data: any) => apiClient.post(`/panoramas/connections`, data),
 
+  update: (id: string | number, data: any) => apiClient.patch(`/panoramas/${id}`, data),
+
   delete: (id: string | number) => apiClient.delete(`/panoramas/${id}`),
 }
 

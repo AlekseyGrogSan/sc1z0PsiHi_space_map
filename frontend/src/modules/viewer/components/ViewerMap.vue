@@ -204,7 +204,9 @@ function getCorridorPolygon(c: any): [number, number][] {
 }
 
 function getFloorNavigableBounds(floor: any): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const fw = floor?.width || floor?.width_px || 1600
+  const fh = floor?.height || floor?.height_px || 900
+  let minX = 0, minY = 0, maxX = fw, maxY = fh
 
   const layout = floor?.layout_data
   if (layout) {
@@ -272,18 +274,25 @@ function getFloorNavigableBounds(floor: any): { minX: number; minY: number; maxX
     }
   }
 
-  const fw = floor?.width || floor?.width_px || 1600
-  const fh = floor?.height || floor?.height_px || 900
-
-  if (minX === Infinity || maxX === -Infinity) {
-    return { minX: 0, minY: 0, maxX: fw, maxY: fh }
+  // Also include POIs
+  if (Array.isArray(props.pois)) {
+    for (const p of props.pois) {
+      if (p.floor_id === floor?.id) {
+        const px = Number(p.x ?? 0)
+        const py = Number(p.y ?? 0)
+        minX = Math.min(minX, px)
+        maxX = Math.max(maxX, px)
+        minY = Math.min(minY, py)
+        maxY = Math.max(maxY, py)
+      }
+    }
   }
 
   return {
-    minX: Math.max(0, Math.round(minX)),
-    minY: Math.max(0, Math.round(minY)),
-    maxX: Math.min(fw, Math.round(maxX)),
-    maxY: Math.min(fh, Math.round(maxY)),
+    minX: Math.round(minX),
+    minY: Math.round(minY),
+    maxX: Math.round(maxX),
+    maxY: Math.round(maxY),
   }
 }
 

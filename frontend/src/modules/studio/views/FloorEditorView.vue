@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { floorsApi, poisApi, navApi, spacesApi } from '../../../api'
+import { floorsApi, poisApi, navApi, spacesApi, panoramaApi } from '../../../api'
 import { resolveMediaUrl } from '../../../api/client'
 import FloorSidebar from '../components/FloorSidebar.vue'
 import PlanUploadPanel from '../components/PlanUploadPanel.vue'
@@ -106,14 +106,39 @@ async function loadFloorData() {
   }
   blueprintRotation.value = layoutData.value.blueprint_rotation || 0
 
-  const [poisRes, graphRes] = await Promise.allSettled([
+  const [poisRes, graphRes, panosRes] = await Promise.allSettled([
     poisApi.list(fid),
     navApi.getGraph(fid),
+    panoramaApi.listByFloor(fid),
   ])
 
-  pois.value = poisRes.status === 'fulfilled'
-    ? (Array.isArray(poisRes.value.data) ? poisRes.value.data : (poisRes.value.data?.items || []))
+  const loadedPois = poisRes.status === 'fulfilled'
+    ? (Array.isArray(poisRes.value.data) ? [...poisRes.value.data] : [...(poisRes.value.data?.items || [])])
     : []
+
+  const loadedPanos = panosRes.status === 'fulfilled' && Array.isArray(panosRes.value?.data)
+    ? panosRes.value.data
+    : []
+
+  // Ensure any standalone panorama without a matching POI is also represented
+  const existingPanoIds = new Set(loadedPois.map(p => String(p.panorama_id)).filter(Boolean))
+  for (const pano of loadedPanos) {
+    if (!existingPanoIds.has(String(pano.id))) {
+      loadedPois.push({
+        id: `pano_${pano.id}`,
+        panorama_id: pano.id,
+        title: pano.title || 'Панорама 360°',
+        category: 'custom',
+        x_coord: pano.x_coord,
+        y_coord: pano.y_coord,
+        x: pano.x_coord,
+        y: pano.y_coord,
+        description: 'Точка обзора 360°',
+      })
+    }
+  }
+
+  pois.value = loadedPois
 
   if (graphRes.status === 'fulfilled' && graphRes.value?.data) {
     const g = graphRes.value.data
@@ -642,27 +667,48 @@ function drawPois() {
     const px = Number(poi.x_coord ?? poi.x ?? 0)
     const marker = L.marker([py, px], { icon, draggable: true })
 
+    marker.on('dragstart', () => {
+      justDragged = true
+      if (map) map.dragging.disable()
+      selectedElement.value = { type: 'poi', item: poi }
+    })
+
     marker.on('dragend', async (e) => {
+      justDragged = true
+      setTimeout(() => { justDragged = false }, 250)
+      if (map) map.dragging.enable()
+
       const { lat, lng } = e.target.getLatLng()
       const b = getFloorNavigableBounds()
-      const npx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
-      const npy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
+      const npx = Math.max(b.minX, Math.min(b.maxX, Math.round(lng)))
+      const npy = Math.max(b.minY, Math.min(b.maxY, Math.round(lat)))
       poi.y_coord = npy
       poi.x_coord = npx
       poi.x = npx
       poi.y = npy
       selectedElement.value = { type: 'poi', item: poi }
-      await poisApi.update(poi.id, { y_coord: npy, x_coord: npx })
+
+      if (String(poi.id).startsWith('pano_')) {
+        await panoramaApi.update(poi.panorama_id, { x_coord: npx, y_coord: npy })
+      } else {
+        await poisApi.update(poi.id, { y_coord: npy, x_coord: npx })
+        if (poi.panorama_id) {
+          try {
+            await panoramaApi.update(poi.panorama_id, { x_coord: npx, y_coord: npy })
+          } catch (err) {
+            console.error('Failed to update linked panorama coordinates:', err)
+          }
+        }
+      }
       isGraphDirty.value = true
       refreshMapLayers()
     })
 
     marker.on('click', (e) => {
-      if (mode.value === 'view') {
-        L.DomEvent.stopPropagation(e)
-        selectedElement.value = { type: 'poi', item: poi }
-        refreshMapLayers()
-      }
+      L.DomEvent.stopPropagation(e)
+      mode.value = 'view'
+      selectedElement.value = { type: 'poi', item: poi }
+      refreshMapLayers()
     })
 
     poisLayer.addLayer(marker)
@@ -849,7 +895,9 @@ function drawNavGraph() {
 
 // Compute Navigable / Outer Floor Bounds
 function getFloorNavigableBounds() {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const fw = currentFloor.value?.width || currentFloor.value?.width_px || 1600
+  const fh = currentFloor.value?.height || currentFloor.value?.height_px || 900
+  let minX = 0, minY = 0, maxX = fw, maxY = fh
   const layout = layoutData.value || {}
 
   if (Array.isArray(layout.rooms)) {
@@ -911,18 +959,22 @@ function getFloorNavigableBounds() {
     }
   }
 
-  const fw = currentFloor.value?.width || currentFloor.value?.width_px || 1600
-  const fh = currentFloor.value?.height || currentFloor.value?.height_px || 900
-
-  if (minX === Infinity || maxX === -Infinity) {
-    return { minX: 0, minY: 0, maxX: fw, maxY: fh }
+  if (Array.isArray(pois.value)) {
+    for (const p of pois.value) {
+      const px = Number(p.x_coord ?? p.x ?? 0)
+      const py = Number(p.y_coord ?? p.y ?? 0)
+      minX = Math.min(minX, px)
+      maxX = Math.max(maxX, px)
+      minY = Math.min(minY, py)
+      maxY = Math.max(maxY, py)
+    }
   }
 
   return {
-    minX: Math.max(0, Math.round(minX)),
-    minY: Math.max(0, Math.round(minY)),
-    maxX: Math.min(fw, Math.round(maxX)),
-    maxY: Math.min(fh, Math.round(maxY)),
+    minX: Math.round(minX),
+    minY: Math.round(minY),
+    maxX: Math.round(maxX),
+    maxY: Math.round(maxY),
   }
 }
 
@@ -1074,16 +1126,16 @@ function onMapClick(e) {
 
   if (mode.value === 'poi') {
     const b = getFloorNavigableBounds()
-    const cx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
-    const cy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
+    const cx = Math.max(b.minX, Math.min(b.maxX, Math.round(lng)))
+    const cy = Math.max(b.minY, Math.min(b.maxY, Math.round(lat)))
     addPoiModal.value = { x: cx, y: cy }
     return
   }
 
   if (mode.value === 'panorama') {
     const b = getFloorNavigableBounds()
-    const cx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
-    const cy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
+    const cx = Math.max(b.minX, Math.min(b.maxX, Math.round(lng)))
+    const cy = Math.max(b.minY, Math.min(b.maxY, Math.round(lat)))
     addPanoramaModal.value = { x: cx, y: cy }
     return
   }
@@ -1637,7 +1689,16 @@ async function deleteSelectedElement() {
 
   if (type === 'poi') {
     try {
-      await poisApi.delete(item.id)
+      if (item.panorama_id) {
+        try {
+          await panoramaApi.delete(item.panorama_id)
+        } catch (e) {
+          console.warn('Failed to delete linked panorama:', e)
+        }
+      }
+      if (!String(item.id).startsWith('pano_')) {
+        await poisApi.delete(item.id)
+      }
       pois.value = pois.value.filter(p => p.id !== item.id)
       isGraphDirty.value = true
     } catch (err) {
@@ -1834,12 +1895,14 @@ function changeCircleRadius(delta) {
 // Event handlers
 async function onPoiAdded() {
   addPoiModal.value = null
+  mode.value = 'view'
   await loadFloorData()
   isGraphDirty.value = true
 }
 
 async function onPanoramaAdded() {
   addPanoramaModal.value = null
+  mode.value = 'view'
   await loadFloorData()
   isGraphDirty.value = true
   await triggerAutoGraph(false)
@@ -1945,10 +2008,25 @@ function nudgeSelected(dx, dy) {
     item.y_coord = py
     item.x = px
     item.y = py
-    poisApi.update(item.id, { x_coord: px, y_coord: py }).then(() => {
-      isGraphDirty.value = true
-      refreshMapLayers()
-    })
+
+    if (String(item.id).startsWith('pano_')) {
+      panoramaApi.update(item.panorama_id, { x_coord: px, y_coord: py }).then(() => {
+        isGraphDirty.value = true
+        refreshMapLayers()
+      })
+    } else {
+      poisApi.update(item.id, { x_coord: px, y_coord: py }).then(async () => {
+        if (item.panorama_id) {
+          try {
+            await panoramaApi.update(item.panorama_id, { x_coord: px, y_coord: py })
+          } catch (e) {
+            console.error('Failed to update linked panorama coords on nudge:', e)
+          }
+        }
+        isGraphDirty.value = true
+        refreshMapLayers()
+      })
+    }
   }
 }
 
@@ -2301,7 +2379,7 @@ onBeforeUnmount(() => {
       v-if="addPoiModal && currentFloor"
       :floorId="currentFloor.id"
       :coords="addPoiModal"
-      @close="addPoiModal = null"
+      @close="addPoiModal = null; mode = 'view'"
       @created="onPoiAdded"
     />
 
@@ -2310,7 +2388,7 @@ onBeforeUnmount(() => {
       v-if="addPanoramaModal && currentFloor"
       :floor-id="currentFloor.id"
       :coords="addPanoramaModal"
-      @close="addPanoramaModal = null"
+      @close="addPanoramaModal = null; mode = 'view'"
       @created="onPanoramaAdded"
     />
 
@@ -2407,10 +2485,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));
   transition: transform 0.15s ease;
+}
+.poi-marker:active {
+  cursor: grabbing;
 }
 .poi-marker:hover {
   transform: scale(1.1);
