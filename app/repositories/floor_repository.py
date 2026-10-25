@@ -18,7 +18,7 @@ class FloorRepository:
             space_id=space_id,
             floor_number=floor_in.floor_number,
             title=floor_in.title,
-            ppm=floor_in.ppm,
+            ppm=floor_in.ppm if floor_in.ppm is not None else 25.0,
             layout_data=floor_in.layout_data or {},
         )
         db.add(floor)

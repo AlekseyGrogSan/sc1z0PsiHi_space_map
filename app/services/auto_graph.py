@@ -132,8 +132,8 @@ def generate_auto_graph(
     edges_set: Set[Tuple[int, int]] = set()
 
     def add_node(x: float, y: float, node_type: str = "walkway") -> int:
-        cx = max(10.0, min(float(width) - 10.0, round(x, 1)))
-        cy = max(10.0, min(float(height) - 10.0, round(y, 1)))
+        cx = round(float(x), 1)
+        cy = round(float(y), 1)
         # Проверяем существующие узлы в радиусе 12px
         for idx, n in enumerate(nodes):
             if math.hypot(n["x"] - cx, n["y"] - cy) < 12.0:
@@ -214,7 +214,7 @@ def generate_auto_graph(
             add_edge(c_indices[k], c_indices[(k + 1) % 4])
         rect_corner_indices.append(c_indices)
 
-    # 3.1. Узлы обхода углов и поворотов стен
+    # 3.1. Узлы обхода углов и поворотов стен (без жесткого отсечения по [0, width])
     wall_endpoints: List[Tuple[float, float]] = []
     for w in walls:
         x1, y1 = float(w["x1"]), float(w["y1"])
@@ -239,22 +239,21 @@ def generate_auto_graph(
                 (x2 - margin * nx, y2 - margin * ny),
             ]
             for bx, by in wall_bypasses:
-                if 10.0 <= bx <= width - 10.0 and 10.0 <= by <= height - 10.0:
-                    clear_point = True
-                    for c in circle_obstacles:
-                        if math.hypot(bx - c["x"], by - c["y"]) <= c["radius"] + 10.0:
+                clear_point = True
+                for c in circle_obstacles:
+                    if math.hypot(bx - c["x"], by - c["y"]) <= c["radius"] + 10.0:
+                        clear_point = False
+                        break
+                if clear_point:
+                    for r in rect_obstacles:
+                        if (
+                            r["x"] - 5.0 <= bx <= r["x"] + r["width"] + 5.0
+                            and r["y"] - 5.0 <= by <= r["y"] + r["height"] + 5.0
+                        ):
                             clear_point = False
                             break
-                    if clear_point:
-                        for r in rect_obstacles:
-                            if (
-                                r["x"] - 5.0 <= bx <= r["x"] + r["width"] + 5.0
-                                and r["y"] - 5.0 <= by <= r["y"] + r["height"] + 5.0
-                            ):
-                                clear_point = False
-                                break
-                    if clear_point:
-                        add_node(bx, by, node_type="walkway")
+                if clear_point:
+                    add_node(bx, by, node_type="walkway")
 
     # 3.2. Авто-обнаружение дверных проёмов (проходов между концами стен)
     doorway_node_indices: List[int] = []
@@ -270,29 +269,48 @@ def generate_auto_graph(
                 door_idx = add_node(door_mid_x, door_mid_y, node_type="door")
                 doorway_node_indices.append(door_idx)
 
-    # 4. Узлы для комнат и центров зон (+ внутренние точки сетки для больших зон)
+    # 4. Узлы для комнат и центров зон (+ внутренняя регулярная сетка для больших зон)
     room_node_indices: List[int] = []
     for room in rooms:
         rx = float(room.get("x", 0))
         ry = float(room.get("y", 0))
         rw = float(room.get("width", 200))
         rh = float(room.get("height", 150))
+        if rw <= 0 or rh <= 0:
+            continue
+
         # Центральный узел комнаты
         rc_idx = add_node(rx + rw / 2.0, ry + rh / 2.0, node_type="walkway")
         room_node_indices.append(rc_idx)
 
-        # Если комната большая, добавляем узлы сетки внутри зоны для доступности произвольных точек
-        if rw >= 120.0 or rh >= 120.0:
-            sub_points = [
-                (rx + rw * 0.25, ry + rh * 0.25),
-                (rx + rw * 0.75, ry + rh * 0.25),
-                (rx + rw * 0.25, ry + rh * 0.75),
-                (rx + rw * 0.75, ry + rh * 0.75),
-            ]
-            for sx, sy in sub_points:
-                sub_idx = add_node(sx, sy, node_type="walkway")
-                room_node_indices.append(sub_idx)
-                add_edge(rc_idx, sub_idx)
+        # Сетка внутренних точек для проходимости по всей площади комнаты
+        grid_step = 80.0
+        num_x = max(1, int(rw // grid_step))
+        num_y = max(1, int(rh // grid_step))
+        step_x = rw / (num_x + 1)
+        step_y = rh / (num_y + 1)
+
+        for ix in range(1, num_x + 1):
+            for iy in range(1, num_y + 1):
+                sx = rx + ix * step_x
+                sy = ry + iy * step_y
+                pt_clear = True
+                for c in circle_obstacles:
+                    if math.hypot(sx - c["x"], sy - c["y"]) <= c["radius"] + 15.0:
+                        pt_clear = False
+                        break
+                if pt_clear:
+                    for r_ob in rect_obstacles:
+                        if (
+                            r_ob["x"] - 8.0 <= sx <= r_ob["x"] + r_ob["width"] + 8.0
+                            and r_ob["y"] - 8.0 <= sy <= r_ob["y"] + r_ob["height"] + 8.0
+                        ):
+                            pt_clear = False
+                            break
+                if pt_clear:
+                    sub_idx = add_node(sx, sy, node_type="walkway")
+                    room_node_indices.append(sub_idx)
+                    add_edge(rc_idx, sub_idx)
 
     # 5. Коридоры / проходы
     corridor_node_indices: List[int] = []

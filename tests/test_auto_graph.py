@@ -221,3 +221,44 @@ async def test_route_from_room_to_room_arbitrary_start_avoids_walls(
         p1 = (points[k]["x"], points[k]["y"])
         p2 = (points[k + 1]["x"], points[k + 1]["y"])
         assert is_segment_clear(p1, p2, [dividing_wall], [], []), f"Отрезок {p1}->{p2} режет стену!"
+
+
+def test_auto_graph_handles_negative_and_extended_coordinates():
+    """
+    Проверяет, что при отрицательных координатах (например, комната слева от 0)
+    узлы не сжимаются в 10.0 и граф корректно строится в отрицательной области.
+    """
+    layout = {
+        "rooms": [
+            {"id": "r1", "title": "ЗОНА 1", "x": -400, "y": 100, "width": 300, "height": 300},
+            {"id": "r2", "title": "ЗОНА 2", "x": 100, "y": 100, "width": 300, "height": 300},
+        ],
+        "walls": [
+            {"x1": -400, "y1": 100, "x2": -100, "y2": 100},
+            {"x1": -400, "y1": 400, "x2": -100, "y2": 400},
+            {"x1": -400, "y1": 100, "x2": -400, "y2": 400},
+            {"x1": -100, "y1": 100, "x2": -100, "y2": 220},  # дверной проём 220..280
+            {"x1": -100, "y1": 280, "x2": -100, "y2": 400},
+        ],
+        "corridors": [
+            {"x1": -100, "y1": 250, "x2": 100, "y2": 250},
+        ],
+        "obstacles": [
+            {"type": "circle", "x": -250, "y": 250, "radius": 30},
+        ],
+    }
+    mock_pois = [
+        {"x": -350, "y": 150, "category": "stand", "title": "Стенд 1"},
+        {"x": 250, "y": 250, "category": "stand", "title": "Стенд 2"},
+    ]
+
+    nodes, edges = generate_auto_graph(1000, 800, layout, mock_pois)
+
+    # Проверяем, что узлы в отрицательной зоне действительно имеют x < -50
+    neg_nodes = [n for n in nodes if n["x"] < -50]
+    assert len(neg_nodes) >= 5, "Узлы в отрицательной области не должны схлопываться или отсекаться!"
+
+    # Узел POI должен быть в (-350, 150), а не прижат к 10
+    poi_node = next(n for n in nodes if abs(n["x"] - (-350)) < 1.0 and abs(n["y"] - 150) < 1.0)
+    assert poi_node is not None
+

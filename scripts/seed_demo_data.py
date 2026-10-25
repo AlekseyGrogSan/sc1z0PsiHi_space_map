@@ -5,7 +5,12 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import sys
 from pathlib import Path
+
+# Добавляем корень проекта в sys.path, чтобы скрипт можно было запускать любым способом:
+# python scripts/seed_demo_data.py или docker compose exec api python scripts/seed_demo_data.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings
 from app.core.database import async_session_factory
