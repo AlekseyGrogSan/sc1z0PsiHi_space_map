@@ -373,4 +373,81 @@ def test_auto_graph_multi_room_segregation_and_no_direct_cuts():
     assert any(abs(n["x"] - 450.0) < 5.0 and abs(n["y"] - 275.0) < 5.0 for n in door_nodes), "Дверной проем между ЗОНА 4 и ЗОНА 8 не найден!"
 
 
+def test_auto_graph_obstacle_clearance_and_zero_void_artifacts():
+    """
+    Проверяет сценарий из последнего баг-репорта:
+    1. Препятствия, прилегающие к внешней стене (например, внизу здания),
+       НЕ должны выталкивать узлы или рёбра в пустоту за пределы здания.
+    2. Препятствия с отрицательными width/height не должны ломать расчет
+       и не должны содержать узлов внутри себя.
+    3. Внутри зон обеспечивается плотное равномерное покрытие сеткой (grid_step=45).
+    4. Узлы не ставятся вплотную к стенам и препятствиям.
+    """
+    from app.services.auto_graph import distance_point_to_segment, normalize_rect
+
+    layout = {
+        "rooms": [
+            {"id": "r9", "title": "ЗОНА 9", "x": 100, "y": 500, "width": 300, "height": 250},
+            {"id": "r10", "title": "ЗОНА 10", "x": 400, "y": 500, "width": 300, "height": 250},
+        ],
+        "walls": [
+            {"x1": 100, "y1": 500, "x2": 700, "y2": 500},
+            {"x1": 100, "y1": 750, "x2": 700, "y2": 750},
+            {"x1": 100, "y1": 500, "x2": 100, "y2": 750},
+            {"x1": 700, "y1": 500, "x2": 700, "y2": 750},
+            {"x1": 400, "y1": 500, "x2": 400, "y2": 600},
+            {"x1": 400, "y1": 650, "x2": 400, "y2": 750},
+        ],
+        "obstacles": [
+            # Препятствия, касающиеся нижней внешней стены (y=750)
+            {"type": "rect", "x": 150, "y": 700, "width": 80, "height": 50},
+            {"type": "rect", "x": 260, "y": 710, "width": 60, "height": 40},
+            # Высокое препятствие внутри зоны 9
+            {"type": "rect", "x": 120, "y": 530, "width": 50, "height": 120},
+            # Препятствие с отрицательной шириной
+            {"type": "rect", "x": 150, "y": 600, "width": -50, "height": 40},
+        ],
+        "corridors": [],
+    }
+
+    pois = [
+        {"x": 130, "y": 720, "title": "POI 1", "category": "stand"},
+        {"x": 600, "y": 600, "title": "POI 2", "category": "stand"},
+    ]
+
+    nodes, edges = generate_auto_graph(1000, 1000, layout, pois)
+
+    # 1. Ноль узлов в пустоте за пределами здания
+    void_nodes = [n for n in nodes if n["y"] > 750.5 or n["y"] < 499.5 or n["x"] < 99.5 or n["x"] > 700.5]
+    assert len(void_nodes) == 0, f"Обнаружены узлы в пустоте за пределами здания: {void_nodes}"
+
+    # 2. Ноль рёбер в пустоте за пределами здания
+    for i1, i2 in edges:
+        p1 = (nodes[i1]["x"], nodes[i1]["y"])
+        p2 = (nodes[i2]["x"], nodes[i2]["y"])
+        assert 499.5 <= p1[1] <= 750.5, f"Точка ребра {p1} в пустоте по Y!"
+        assert 499.5 <= p2[1] <= 750.5, f"Точка ребра {p2} в пустоте по Y!"
+        assert 99.5 <= p1[0] <= 700.5, f"Точка ребра {p1} в пустоте по X!"
+        assert 99.5 <= p2[0] <= 700.5, f"Точка ребра {p2} в пустоте по X!"
+
+    # 3. Ноль узлов внутри препятствий
+    for n in nodes:
+        for ob in layout["obstacles"]:
+            rx, ry, rw, rh = normalize_rect(ob)
+            inside = (rx <= n["x"] <= rx + rw and ry <= n["y"] <= ry + rh)
+            assert not inside, f"Узел {n} находится внутри препятствия {ob}!"
+
+    # 4. Узлы (кроме дверей) не лежат вплотную на стенах
+    for n in nodes:
+        if n["node_type"] != "door":
+            for w in layout["walls"]:
+                d = distance_point_to_segment(n["x"], n["y"], w["x1"], w["y1"], w["x2"], w["y2"])
+                assert d >= 8.0, f"Узел {n} расположен слишком близко к стене {w} (d={d})!"
+
+    # 5. Плотное покрытие: Зона 9 имеет более 20 узлов
+    r9_nodes = [n for n in nodes if n.get("room_id") == "r9"]
+    assert len(r9_nodes) >= 20, f"Покрытие Зоны 9 недостаточно плотное: {len(r9_nodes)} узлов"
+
+
+
 
