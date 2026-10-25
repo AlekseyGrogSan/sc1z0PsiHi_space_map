@@ -30,12 +30,13 @@ export function resolveMediaUrl(url: string | null | undefined): string {
     if (url.startsWith('/api/v1/')) {
       return `${protocol}//${hostname}:8000${url}`
     }
-    // Если URL содержит localhost:9000 (MinIO) или localhost:8000 на удаленном хосте
+    // Если URL содержит spaces-public (MinIO), перенаправляем через публичный FastAPI прокси
+    if (url.includes('/spaces-public/')) {
+      const key = url.split('/spaces-public/')[1]
+      return `${protocol}//${hostname}:8000/api/v1/media/public/${key}`
+    }
+    // Если URL содержит localhost:8000 на удаленном хосте
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      if (url.includes('localhost:9000/spaces-public/')) {
-        const key = url.split('/spaces-public/')[1]
-        return `${protocol}//${hostname}:8000/api/v1/media/public/${key}`
-      }
       if (url.includes('localhost:8000')) {
         return url.replace('localhost:8000', `${hostname}:8000`)
       }

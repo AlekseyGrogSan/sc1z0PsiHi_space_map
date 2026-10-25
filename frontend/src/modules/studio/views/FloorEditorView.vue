@@ -7,6 +7,7 @@ import FloorSidebar from '../components/FloorSidebar.vue'
 import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
 import AddPanoramaModal from '../components/AddPanoramaModal.vue'
+import PanoramaModal from '../../viewer/components/PanoramaModal.vue'
 import {
   ArrowLeft, Layers, Trash2, Check, X, Square, Minus, Circle, Box,
   Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler, Shapes, Wand2, Magnet, Camera
@@ -28,6 +29,7 @@ const mode = ref('view') // 'view' | 'room' | 'poly-room' | 'wall' | 'circle' | 
 const showUpload = ref(false)
 const addPoiModal = ref(null) // { x, y } in pixel coords
 const addPanoramaModal = ref(null) // { x, y } in pixel coords
+const previewPoiPanorama = ref(null) // POI to preview 360 panorama
 const addRoomModal = ref(null) // { p1, p2, points, title, color }
 const addCircleModal = ref(null) // { lat, lng, radius, title }
 const selectedElement = ref(null) // { type, item }
@@ -2276,12 +2278,14 @@ onBeforeUnmount(() => {
             {{ selectedElement.type === 'corridor' ? 'Коридор' : '' }}
             {{ selectedElement.type === 'poi' ? `Точка "${selectedElement.item.title}"` : '' }}
           </b>
-          <span
+          <button
             v-if="selectedElement.type === 'poi' && selectedElement.item.panorama_id"
-            class="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold"
+            @click="previewPoiPanorama = selectedElement.item"
+            class="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold cursor-pointer transition-colors"
+            title="Открыть просмотр 360°"
           >
-            <Camera :size="10" /> 360° Панорама
-          </span>
+            <Camera :size="10" /> 360° Панорама (Открыть)
+          </button>
         </div>
 
         <!-- Corridor Width Control -->
@@ -2390,6 +2394,13 @@ onBeforeUnmount(() => {
       :coords="addPanoramaModal"
       @close="addPanoramaModal = null; mode = 'view'"
       @created="onPanoramaAdded"
+    />
+
+    <!-- Preview 360 Panorama Modal -->
+    <PanoramaModal
+      v-if="previewPoiPanorama"
+      :poi="previewPoiPanorama"
+      @close="previewPoiPanorama = null"
     />
 
     <!-- Add Room Modal -->

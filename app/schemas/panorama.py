@@ -61,19 +61,19 @@ class PanoramaResponse(BaseModel):
     def preview_url(self) -> Optional[str]:
         if not self.preview_key:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.preview_key}"
+        return f"{settings.API_V1_STR}/media/public/{self.preview_key.lstrip('/')}"
 
     @computed_field
     def original_url(self) -> Optional[str]:
         if not self.original_key:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.original_key}"
+        return f"{settings.API_V1_STR}/media/public/{self.original_key.lstrip('/')}"
 
     @computed_field
     def cubemap_url_template(self) -> Optional[str]:
         if not self.cubemap_prefix:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.cubemap_prefix}/{{level}}/{{face}}_{{y}}_{{x}}.webp"
+        return f"{settings.API_V1_STR}/media/public/{self.cubemap_prefix.lstrip('/')}/{{level}}/{{face}}_{{y}}_{{x}}.webp"
 
 class PanoramaStatusResponse(BaseModel):
     id: uuid.UUID
@@ -117,10 +117,16 @@ class PanoramaPublicResponse(BaseModel):
     def preview_url(self) -> Optional[str]:
         if not self.preview_key:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.preview_key}"
+        return f"{settings.API_V1_STR}/media/public/{self.preview_key.lstrip('/')}"
+
+    @computed_field
+    def original_url(self) -> Optional[str]:
+        if not self.original_key:
+            return None
+        return f"{settings.API_V1_STR}/media/public/{self.original_key.lstrip('/')}"
 
     @computed_field
     def cubemap_url_template(self) -> Optional[str]:
         if not self.cubemap_prefix:
             return None
-        return f"{settings.S3_PUBLIC_URL_PREFIX}/{self.cubemap_prefix}/{{level}}/{{face}}_{{y}}_{{x}}.webp"
+        return f"{settings.API_V1_STR}/media/public/{self.cubemap_prefix.lstrip('/')}/{{level}}/{{face}}_{{y}}_{{x}}.webp"

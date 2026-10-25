@@ -3,6 +3,15 @@
     <!-- Контейнер Pannellum 360 -->
     <div id="panorama" class="w-full h-full"></div>
 
+    <!-- Индикатор загрузки -->
+    <div
+      v-if="isLoading"
+      class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm gap-3 pointer-events-none"
+    >
+      <Loader2 class="w-10 h-10 text-purple-400 animate-spin" />
+      <span class="text-sm text-purple-300 font-medium">Загрузка 360° панорамы...</span>
+    </div>
+
     <!-- Верхняя панель: кнопка назад и заголовок -->
     <div
       class="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-20"
@@ -55,16 +64,20 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Compass as CompassIcon, ArrowLeft } from 'lucide-vue-next'
+import { Compass as CompassIcon, ArrowLeft, Loader2 } from 'lucide-vue-next'
+import { panoramaApi } from '../../api'
+import { resolveMediaUrl } from '../../api/client'
 
 const router = useRouter()
 const route = useRoute()
 
 const viewer = ref(null)
 const isGyroActive = ref(false)
+const isLoading = ref(true)
+const loadedTitle = ref('')
 
 const pageTitle = computed(() => {
-  return (route.query.title) || 'Выставка: Холл'
+  return loadedTitle.value || route.query.title || '360° Тур'
 })
 
 function goBack() {
@@ -75,42 +88,133 @@ function goBack() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  const panoId = route.query.panoramaId || route.query.id
+  let panoData = null
+
+  if (panoId) {
+    try {
+      const res = await panoramaApi.getPanorama(panoId)
+      panoData = res.data
+      if (panoData?.title) {
+        loadedTitle.value = panoData.title
+      }
+    } catch (err) {
+      console.warn('Не удалось загрузить панораму:', err)
+    }
+  }
+
+  // Wait for window.pannellum if still initializing
+  let tries = 0
+  while (typeof window !== 'undefined' && !window.pannellum && tries < 15) {
+    await new Promise(r => setTimeout(r, 100))
+    tries++
+  }
+
   if (typeof window !== 'undefined' && window.pannellum) {
     try {
-      viewer.value = window.pannellum.viewer('panorama', {
-        type: 'cubemap',
-        cubemap: [
-          '/cubemap/l1/f_0_0.webp',
-          '/cubemap/l1/r_0_0.webp',
-          '/cubemap/l1/b_0_0.webp',
-          '/cubemap/l1/l_0_0.webp',
-          '/cubemap/l1/u_0_0.webp',
-          '/cubemap/l1/d_0_0.webp'
-        ],
-        autoLoad: true,
-        compass: true,
-        showControls: true,
-        hotSpots: [
-          {
-            pitch: 14.1,
-            yaw: 1.5,
-            type: "info",
-            text: "Стенд ТТК",
-            URL: "#"
-          },
-          {
-            pitch: -9.4,
-            yaw: 222.6,
-            type: "scene",
-            text: "Переход в коридор",
-            sceneId: "scene2"
-          }
-        ]
-      })
+      let pannellumConfig = null
+
+      if (panoData?.original_url || panoData?.original_key) {
+        const originalPath = panoData.original_url || `/api/v1/media/public/${panoData.original_key}`
+        pannellumConfig = {
+          type: 'equirectangular',
+          panorama: resolveMediaUrl(originalPath),
+          autoLoad: true,
+          compass: true,
+          showControls: true,
+          title: panoData.title || pageTitle.value,
+        }
+      } else if (panoData?.preview_url || panoData?.preview_key) {
+        const previewPath = panoData.preview_url || `/api/v1/media/public/${panoData.preview_key}`
+        pannellumConfig = {
+          type: 'equirectangular',
+          panorama: resolveMediaUrl(previewPath),
+          autoLoad: true,
+          compass: true,
+          showControls: true,
+          title: panoData.title || pageTitle.value,
+        }
+      } else if (panoData?.cubemap_prefix) {
+        const prefix = resolveMediaUrl(`/api/v1/media/public/${panoData.cubemap_prefix}`)
+        pannellumConfig = {
+          type: 'cubemap',
+          cubeMap: [
+            `${prefix}/l1/f_0_0.webp`,
+            `${prefix}/l1/r_0_0.webp`,
+            `${prefix}/l1/b_0_0.webp`,
+            `${prefix}/l1/l_0_0.webp`,
+            `${prefix}/l1/u_0_0.webp`,
+            `${prefix}/l1/d_0_0.webp`
+          ],
+          autoLoad: true,
+          compass: true,
+          showControls: true,
+          title: panoData.title || pageTitle.value
+        }
+      } else {
+        // Fallback static demo cubemap with CORRECT camelCase cubeMap
+        pannellumConfig = {
+          type: 'cubemap',
+          cubeMap: [
+            '/cubemap/l1/f_0_0.webp',
+            '/cubemap/l1/r_0_0.webp',
+            '/cubemap/l1/b_0_0.webp',
+            '/cubemap/l1/l_0_0.webp',
+            '/cubemap/l1/u_0_0.webp',
+            '/cubemap/l1/d_0_0.webp'
+          ],
+          autoLoad: true,
+          compass: true,
+          showControls: true,
+          title: pageTitle.value,
+          hotSpots: [
+            {
+              pitch: 14.1,
+              yaw: 1.5,
+              type: "info",
+              text: "Точка обзора"
+            }
+          ]
+        }
+      }
+
+      if (panoData?.initial_heading) {
+        pannellumConfig.yaw = panoData.initial_heading
+      }
+
+      if (Array.isArray(panoData?.hotspots) && panoData.hotspots.length > 0) {
+        pannellumConfig.hotSpots = panoData.hotspots.map((h) => ({
+          pitch: h.pitch,
+          yaw: h.yaw,
+          type: 'info',
+          text: h.title || 'Переход',
+        }))
+      }
+
+      viewer.value = window.pannellum.viewer('panorama', pannellumConfig)
+
+      if (viewer.value && typeof viewer.value.on === 'function') {
+        viewer.value.on('load', () => {
+          isLoading.value = false
+        })
+        viewer.value.on('error', (e) => {
+          console.warn('Pannellum error:', e)
+          isLoading.value = false
+        })
+      }
+
+      // Safety timeout
+      setTimeout(() => {
+        isLoading.value = false
+      }, 3000)
+
     } catch (err) {
       console.warn("Ошибка инициализации Pannellum:", err)
+      isLoading.value = false
     }
+  } else {
+    isLoading.value = false
   }
 })
 

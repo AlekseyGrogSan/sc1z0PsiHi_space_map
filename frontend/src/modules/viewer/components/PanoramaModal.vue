@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { X, Rotate3d, Compass, Eye, Maximize2 } from 'lucide-vue-next'
+import { X, Rotate3d, Compass, Eye, Maximize2, Loader2 } from 'lucide-vue-next'
 import type { POI } from '../types'
+import { panoramaApi } from '../../../api'
+import { resolveMediaUrl } from '../../../api/client'
 
 interface Props {
   poi: POI | null
@@ -23,12 +25,13 @@ const isGyroActive = ref(false)
 const isDragging = ref(false)
 const panX = ref(0)
 const startX = ref(0)
+const fallbackImage = ref<string>('')
 
 const isLoadingPannellum = ref(true)
 const loadError = ref(false)
 let watchdogTimer: any = null
 
-function initPannellum() {
+async function initPannellum() {
   if (watchdogTimer) {
     clearTimeout(watchdogTimer)
     watchdogTimer = null
@@ -51,72 +54,154 @@ function initPannellum() {
     viewer.value = null
   }
 
-  nextTick(() => {
-    if (typeof window !== 'undefined' && (window as any).pannellum) {
-      const container = document.getElementById('modal-panorama-container')
-      if (container) {
-        try {
-          viewer.value = (window as any).pannellum.viewer('modal-panorama-container', {
-            type: 'cubemap',
-            cubemap: [
-              '/cubemap/l1/f_0_0.webp',
-              '/cubemap/l1/r_0_0.webp',
-              '/cubemap/l1/b_0_0.webp',
-              '/cubemap/l1/l_0_0.webp',
-              '/cubemap/l1/u_0_0.webp',
-              '/cubemap/l1/d_0_0.webp'
-            ],
-            autoLoad: true,
-            compass: true,
-            showControls: true,
-            title: props.poi?.title || 'Панорама 360°'
-          })
+  // 1. Fetch panorama metadata from backend
+  let panoData: any = null
+  try {
+    const res = await panoramaApi.getPanorama(props.poi.panorama_id)
+    panoData = res.data
+  } catch (err) {
+    console.warn('Не удалось загрузить данные панорамы с бэкенда:', err)
+  }
 
-          if (viewer.value && typeof viewer.value.on === 'function') {
-            viewer.value.on('load', () => {
-              isLoadingPannellum.value = false
-              hasPannellum.value = true
-              if (watchdogTimer) {
-                clearTimeout(watchdogTimer)
-                watchdogTimer = null
-              }
-            })
+  if (panoData?.original_url || panoData?.preview_url) {
+    fallbackImage.value = resolveMediaUrl(panoData.original_url || panoData.preview_url)
+  } else {
+    fallbackImage.value = 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=2000&q=80'
+  }
 
-            viewer.value.on('error', (err: any) => {
-              console.warn('Pannellum error, switching to interactive fallback:', err)
-              isLoadingPannellum.value = false
-              hasPannellum.value = false
-              loadError.value = true
-              if (watchdogTimer) {
-                clearTimeout(watchdogTimer)
-                watchdogTimer = null
-              }
-            })
-          }
+  await nextTick()
 
-          // Watchdog timer: fallback after 3.5s if Pannellum hangs on missing tiles
-          watchdogTimer = setTimeout(() => {
-            if (isLoadingPannellum.value) {
-              console.warn('Pannellum load timed out, switching to interactive fallback')
-              isLoadingPannellum.value = false
-              hasPannellum.value = false
-              loadError.value = true
-            }
-          }, 3500)
+  if (typeof window === 'undefined') return
 
-          hasPannellum.value = true
-        } catch (e) {
-          console.warn('Pannellum modal init failed, using fallback:', e)
-          hasPannellum.value = false
-          isLoadingPannellum.value = false
-          loadError.value = true
-        }
+  // Wait for window.pannellum if script is still initializing
+  let tries = 0
+  while (!(window as any).pannellum && tries < 15) {
+    await new Promise(r => setTimeout(r, 100))
+    tries++
+  }
+
+  const container = document.getElementById('modal-panorama-container')
+  if (!container || !(window as any).pannellum) {
+    hasPannellum.value = false
+    isLoadingPannellum.value = false
+    loadError.value = true
+    return
+  }
+
+  try {
+    let pannellumConfig: any = null
+
+    if (panoData?.original_url || panoData?.original_key) {
+      const originalPath = panoData.original_url || `/api/v1/media/public/${panoData.original_key}`
+      pannellumConfig = {
+        type: 'equirectangular',
+        panorama: resolveMediaUrl(originalPath),
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        title: panoData.title || props.poi?.title || 'Панорама 360°',
+      }
+    } else if (panoData?.preview_url || panoData?.preview_key) {
+      const previewPath = panoData.preview_url || `/api/v1/media/public/${panoData.preview_key}`
+      pannellumConfig = {
+        type: 'equirectangular',
+        panorama: resolveMediaUrl(previewPath),
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        title: panoData.title || props.poi?.title || 'Панорама 360°',
+      }
+    } else if (panoData?.cubemap_prefix) {
+      const prefix = resolveMediaUrl(`/api/v1/media/public/${panoData.cubemap_prefix}`)
+      pannellumConfig = {
+        type: 'cubemap',
+        cubeMap: [
+          `${prefix}/l1/f_0_0.webp`,
+          `${prefix}/l1/r_0_0.webp`,
+          `${prefix}/l1/b_0_0.webp`,
+          `${prefix}/l1/l_0_0.webp`,
+          `${prefix}/l1/u_0_0.webp`,
+          `${prefix}/l1/d_0_0.webp`
+        ],
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        title: panoData.title || props.poi?.title || 'Панорама 360°'
       }
     } else {
-      hasPannellum.value = false
-      isLoadingPannellum.value = false
+      // Demo static cubemap fallback with CORRECT camelCase cubeMap
+      pannellumConfig = {
+        type: 'cubemap',
+        cubeMap: [
+          '/cubemap/l1/f_0_0.webp',
+          '/cubemap/l1/r_0_0.webp',
+          '/cubemap/l1/b_0_0.webp',
+          '/cubemap/l1/l_0_0.webp',
+          '/cubemap/l1/u_0_0.webp',
+          '/cubemap/l1/d_0_0.webp'
+        ],
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        title: props.poi?.title || 'Панорама 360°'
+      }
     }
-  })
+
+    if (panoData?.initial_heading) {
+      pannellumConfig.yaw = panoData.initial_heading
+    }
+
+    if (Array.isArray(panoData?.hotspots) && panoData.hotspots.length > 0) {
+      pannellumConfig.hotSpots = panoData.hotspots.map((h: any) => ({
+        pitch: h.pitch,
+        yaw: h.yaw,
+        type: 'info',
+        text: h.title || 'Переход',
+      }))
+    }
+
+    viewer.value = (window as any).pannellum.viewer('modal-panorama-container', pannellumConfig)
+
+    if (viewer.value && typeof viewer.value.on === 'function') {
+      viewer.value.on('load', () => {
+        isLoadingPannellum.value = false
+        hasPannellum.value = true
+        loadError.value = false
+        if (watchdogTimer) {
+          clearTimeout(watchdogTimer)
+          watchdogTimer = null
+        }
+      })
+
+      viewer.value.on('error', (err: any) => {
+        console.warn('Pannellum error, switching to interactive fallback:', err)
+        isLoadingPannellum.value = false
+        hasPannellum.value = false
+        loadError.value = true
+        if (watchdogTimer) {
+          clearTimeout(watchdogTimer)
+          watchdogTimer = null
+        }
+      })
+    }
+
+    // Watchdog timer: fallback after 4s if Pannellum hangs on missing tiles
+    watchdogTimer = setTimeout(() => {
+      if (isLoadingPannellum.value) {
+        console.warn('Pannellum load timed out, switching to interactive fallback')
+        isLoadingPannellum.value = false
+        hasPannellum.value = false
+        loadError.value = true
+      }
+    }, 4000)
+
+    hasPannellum.value = true
+  } catch (e) {
+    console.warn('Pannellum modal init failed, using fallback:', e)
+    hasPannellum.value = false
+    isLoadingPannellum.value = false
+    loadError.value = true
+  }
 }
 
 watch(
@@ -162,8 +247,9 @@ const toggleGyroscope = async () => {
 
 function openFullTour() {
   const title = props.poi ? encodeURIComponent(props.poi.title) : ''
+  const panoId = props.poi?.panorama_id ? encodeURIComponent(props.poi.panorama_id) : ''
   emit('close')
-  router.push(`/tour360?title=${title}`)
+  router.push(`/tour360?panoramaId=${panoId}&title=${title}`)
 }
 
 function onMouseDown(e: MouseEvent) {
@@ -267,12 +353,21 @@ onBeforeUnmount(() => {
         <!-- Реальный контейнер Pannellum -->
         <div id="modal-panorama-container" class="w-full h-full"></div>
 
+        <!-- Индикатор загрузки -->
+        <div
+          v-if="isLoadingPannellum"
+          class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm gap-2.5 pointer-events-none"
+        >
+          <Loader2 class="w-8 h-8 text-purple-400 animate-spin" />
+          <span class="text-xs text-purple-300 font-medium">Загрузка 360° панорамы...</span>
+        </div>
+
         <!-- Имитация (если Pannellum оффлайн или не поддерживается) -->
         <div
-          v-if="!hasPannellum"
+          v-if="!hasPannellum && !isLoadingPannellum"
           class="absolute inset-0 w-[300%] h-full bg-cover bg-center transition-transform duration-75 cursor-grab active:cursor-grabbing"
           :style="{
-            backgroundImage: `url('https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=2000&q=80')`,
+            backgroundImage: `url('${fallbackImage}')`,
             transform: `translateX(${panX % 1000}px)`,
           }"
         ></div>
