@@ -4,7 +4,7 @@ import { floorsApi } from '../../../api'
 import {
   MousePointer2, Square, Minus, Circle, Box, Footprints, MapPin,
   Zap, Eye, EyeOff, Sliders, Ruler, Trash2,
-  Layers, Plus, Check, X, Upload
+  Layers, Plus, Check, X, Upload, Shapes, Wand2, Magnet
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -46,6 +46,7 @@ const emit = defineEmits([
   'auto-graph', 'toggle-show-graph', 'update:blueprintOpacity',
   'clear-layout', 'start-calib', 'save-calib', 'cancel-calib',
   'update:calibDistance', 'update:corridorWidth', 'delete-plan', 'close-mobile',
+  'align-walls', 'walls-to-room',
 ])
 
 const showAddFloor = ref(false)
@@ -74,7 +75,8 @@ async function createFloor() {
 
 const BUILDER_MODES = [
   { id: 'view', label: 'Просмотр / Выбор', icon: MousePointer2, color: 'text-slate-300', bg: 'rgba(100,116,139,0.2)' },
-  { id: 'room', label: 'Зона / Комната', icon: Square, color: 'text-blue-400', bg: 'rgba(59,130,246,0.15)' },
+  { id: 'room', label: 'Зона (прямоугольник)', icon: Square, color: 'text-blue-400', bg: 'rgba(59,130,246,0.15)' },
+  { id: 'poly-room', label: 'Зона (многоугольник)', icon: Shapes, color: 'text-indigo-400', bg: 'rgba(99,102,241,0.15)' },
   { id: 'wall', label: 'Стена', icon: Minus, color: 'text-slate-200', bg: 'rgba(148,163,184,0.2)' },
   { id: 'circle', label: 'Колонна / Круг', icon: Circle, color: 'text-cyan-400', bg: 'rgba(6,182,212,0.15)' },
   { id: 'rect', label: 'Препятствие / Стенд', icon: Box, color: 'text-amber-400', bg: 'rgba(245,158,11,0.15)' },
@@ -173,11 +175,39 @@ const BUILDER_MODES = [
       <!-- Quick instructions per mode -->
       <div v-if="mode !== 'view'" class="mt-3 p-2.5 rounded-lg text-xs leading-relaxed" style="background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border)">
         <p v-if="mode === 'room'">💡 <b>Зона / Комната:</b> кликните первый угол, затем второй угол для создания прямоугольной зоны.</p>
-        <p v-if="mode === 'wall'">💡 <b>Стена:</b> кликните начало стены, затем конец. Стены непроходимы для маршрутов.</p>
+        <p v-if="mode === 'poly-room'">💡 <b>Многоугольная зона:</b> кликайте вершины для создания формы любой сложности (L-образные и др.). Клик рядом с началом или кнопка «Завершить» замыкает зону.</p>
+        <p v-if="mode === 'wall'">💡 <b>Стена:</b> кликните начало стены, затем конец. Автоматическое выравнивание под 90° и примагничивание к углам.</p>
         <p v-if="mode === 'circle'">💡 <b>Колонна:</b> кликните на карте, чтобы поставить круглую колонну. Маршруты огибают её по касательной.</p>
         <p v-if="mode === 'rect'">💡 <b>Препятствие:</b> кликните два угла прямоугольного стенда или киоска.</p>
         <p v-if="mode === 'corridor'">💡 <b>Проход / Коридор:</b> кликните начало и конец основного прохода для приоритетной трассировки.</p>
         <p v-if="mode === 'poi'">💡 <b>POI:</b> кликните на карте для создания точки (вход, выход, лавочка, урна, магазин...).</p>
+      </div>
+
+      <!-- Wall Tools: Align & Glue, Convert Closed Walls to Room -->
+      <div v-if="layoutCounts.walls >= 2" class="mt-3 pt-3 border-t border-slate-800/80 space-y-1.5">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Инструменты стен</p>
+          <span class="text-[10px] text-indigo-400 font-mono">Smart Snap</span>
+        </div>
+        <button
+          type="button"
+          @click="$emit('align-walls')"
+          class="w-full flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700/90 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/50 transition-all cursor-pointer shadow-sm active:scale-95"
+          title="Выравнивает стены под 0°/90°, склеивает близкие стыки и объединяет отрезки в единые прямые"
+        >
+          <Wand2 :size="13" class="text-indigo-400 shrink-0" />
+          <span>Выровнять и склеить стены</span>
+        </button>
+        <button
+          v-if="layoutCounts.walls >= 3"
+          type="button"
+          @click="$emit('walls-to-room')"
+          class="w-full flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700/90 text-blue-300 border border-blue-500/30 hover:border-blue-500/50 transition-all cursor-pointer shadow-sm active:scale-95"
+          title="Находит замкнутый контур стен и превращает его в залитую зону/комнату со сложным контуром"
+        >
+          <Shapes :size="13" class="text-blue-400 shrink-0" />
+          <span>Собрать зону из стен</span>
+        </button>
       </div>
 
       <!-- Corridor Width Settings -->

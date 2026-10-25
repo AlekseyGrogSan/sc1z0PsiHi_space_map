@@ -8,7 +8,7 @@ import PlanUploadPanel from '../components/PlanUploadPanel.vue'
 import AddPoiModal from '../components/AddPoiModal.vue'
 import {
   ArrowLeft, Layers, Trash2, Check, X, Square, Minus, Circle, Box,
-  Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler
+  Footprints, MapPin, Zap, Eye, RotateCcw, Copy, Ruler, Shapes, Wand2, Magnet
 } from 'lucide-vue-next'
 
 const props = defineProps({ spaceId: String, floorId: String })
@@ -23,13 +23,14 @@ const navNodes = ref([])
 const navEdges = ref([])
 const layoutData = ref({ rooms: [], walls: [], obstacles: [], corridors: [] })
 const loading = ref(true)
-const mode = ref('view') // 'view' | 'room' | 'wall' | 'circle' | 'rect' | 'corridor' | 'poi'
+const mode = ref('view') // 'view' | 'room' | 'poly-room' | 'wall' | 'circle' | 'rect' | 'corridor' | 'poi'
 const showUpload = ref(false)
 const addPoiModal = ref(null) // { x, y } in pixel coords
-const addRoomModal = ref(null) // { p1, p2, title, color }
+const addRoomModal = ref(null) // { p1, p2, points, title, color }
 const addCircleModal = ref(null) // { lat, lng, radius, title }
 const selectedElement = ref(null) // { type, item }
 const drawingPoint = ref(null) // { lat, lng } start point for 2-click drawing
+const polyPoints = ref([]) // [{ lat, lng }] points for polygon room drawing
 const corridorWidth = ref(35) // Width of corridor in px
 const isMobileSidebarOpen = ref(false) // Mobile tools drawer state
 
@@ -147,6 +148,7 @@ async function initMap() {
     maxZoom: 3,
     zoomSnap: 0.25,
     attributionControl: false,
+    doubleClickZoom: false,
   })
 
   const bounds = [[0, 0], [h, w]]
@@ -168,6 +170,7 @@ async function initMap() {
   map.fitBounds(bounds)
   map.on('click', onMapClick)
   map.on('mousemove', onMapMouseMove)
+  map.on('dblclick', onMapDblClick)
 
   mapReady.value = true
   refreshMapLayers()
@@ -244,7 +247,7 @@ function attachShapeDrag(layer, { onDrag, onDragEnd, onClick }) {
   })
 }
 
-// 1. Draw Rooms (Draggable)
+// 1. Draw Rooms (Draggable, supports both rectangular and polygon rooms)
 function drawRooms() {
   if (!roomsLayer || !window.L) return
   roomsLayer.clearLayers()
@@ -253,41 +256,83 @@ function drawRooms() {
   const rooms = layoutData.value.rooms || []
   rooms.forEach(r => {
     const isSel = selectedElement.value?.type === 'room' && selectedElement.value?.item?.id === r.id
-    const p1 = [r.y, r.x]
-    const p2 = [r.y + r.height, r.x + r.width]
-    const rect = L.rectangle([p1, p2], {
-      color: isSel ? '#ffffff' : (r.color || '#3b82f6'),
-      weight: isSel ? 3 : 1.5,
-      dashArray: isSel ? '4, 4' : null,
-      fillColor: r.color || '#3b82f6',
-      fillOpacity: isSel ? 0.35 : 0.2,
-      className: 'element-draggable',
-    })
+    const hasPoly = r.points && Array.isArray(r.points) && r.points.length >= 3
+    let shape
+    let center
 
-    const origX = r.x
-    const origY = r.y
-    const origW = r.width
-    const origH = r.height
+    if (hasPoly) {
+      const latlngs = r.points.map(pt => [Number(pt[1]), Number(pt[0])])
+      shape = L.polygon(latlngs, {
+        color: isSel ? '#ffffff' : (r.color || '#6366f1'),
+        weight: isSel ? 3 : 1.5,
+        dashArray: isSel ? '4, 4' : null,
+        fillColor: r.color || '#6366f1',
+        fillOpacity: isSel ? 0.35 : 0.2,
+        className: 'element-draggable',
+      })
 
-    attachShapeDrag(rect, {
-      onDrag: (dx, dy) => {
-        rect.setBounds([[origY + dy, origX + dx], [origY + origH + dy, origX + origW + dx]])
-      },
-      onDragEnd: async (dx, dy) => {
-        r.x = Math.round(origX + dx)
-        r.y = Math.round(origY + dy)
-        selectedElement.value = { type: 'room', item: r }
-        await saveLayoutData(true)
-      },
-      onClick: () => {
-        selectedElement.value = { type: 'room', item: r }
-        refreshMapLayers()
-      },
-    })
-    roomsLayer.addLayer(rect)
+      const avgY = latlngs.reduce((sum, p) => sum + p[0], 0) / latlngs.length
+      const avgX = latlngs.reduce((sum, p) => sum + p[1], 0) / latlngs.length
+      center = [avgY, avgX]
 
-    if (r.title) {
-      const center = [r.y + r.height / 2, r.x + r.width / 2]
+      const origPoints = r.points.map(p => [p[0], p[1]])
+      attachShapeDrag(shape, {
+        onDrag: (dx, dy) => {
+          shape.setLatLngs(origPoints.map(p => [p[1] + dy, p[0] + dx]))
+        },
+        onDragEnd: async (dx, dy) => {
+          r.points = origPoints.map(p => [Math.round(p[0] + dx), Math.round(p[1] + dy)])
+          const xs = r.points.map(p => p[0])
+          const ys = r.points.map(p => p[1])
+          r.x = Math.min(...xs)
+          r.y = Math.min(...ys)
+          r.width = Math.max(...xs) - r.x
+          r.height = Math.max(...ys) - r.y
+          selectedElement.value = { type: 'room', item: r }
+          await saveLayoutData(true)
+        },
+        onClick: () => {
+          selectedElement.value = { type: 'room', item: r }
+          refreshMapLayers()
+        },
+      })
+    } else {
+      const p1 = [r.y, r.x]
+      const p2 = [r.y + r.height, r.x + r.width]
+      shape = L.rectangle([p1, p2], {
+        color: isSel ? '#ffffff' : (r.color || '#3b82f6'),
+        weight: isSel ? 3 : 1.5,
+        dashArray: isSel ? '4, 4' : null,
+        fillColor: r.color || '#3b82f6',
+        fillOpacity: isSel ? 0.35 : 0.2,
+        className: 'element-draggable',
+      })
+      center = [r.y + r.height / 2, r.x + r.width / 2]
+      const origX = r.x
+      const origY = r.y
+      const origW = r.width
+      const origH = r.height
+
+      attachShapeDrag(shape, {
+        onDrag: (dx, dy) => {
+          shape.setBounds([[origY + dy, origX + dx], [origY + origH + dy, origX + origW + dx]])
+        },
+        onDragEnd: async (dx, dy) => {
+          r.x = Math.round(origX + dx)
+          r.y = Math.round(origY + dy)
+          selectedElement.value = { type: 'room', item: r }
+          await saveLayoutData(true)
+        },
+        onClick: () => {
+          selectedElement.value = { type: 'room', item: r }
+          refreshMapLayers()
+        },
+      })
+    }
+
+    roomsLayer.addLayer(shape)
+
+    if (r.title && center) {
       const label = L.divIcon({
         className: 'room-label-badge',
         html: `<div class="room-title-tag ${isSel ? 'selected' : ''}">${r.title}</div>`,
@@ -547,8 +592,9 @@ function drawSelectionHandles() {
     const h1 = L.marker([item.y1, item.x1], { icon: createHandleIcon('#f43f5e'), draggable: true })
     h1.on('dragend', async (e) => {
       const { lat, lng } = e.target.getLatLng()
-      item.x1 = Math.round(lng)
-      item.y1 = Math.round(lat)
+      const snapped = getSnappedPoint(lat, lng, { lat: item.y2, lng: item.x2 })
+      item.x1 = Math.round(snapped.lng)
+      item.y1 = Math.round(snapped.lat)
       await saveLayoutData(true)
     })
     handlesLayer.addLayer(h1)
@@ -556,8 +602,9 @@ function drawSelectionHandles() {
     const h2 = L.marker([item.y2, item.x2], { icon: createHandleIcon('#f43f5e'), draggable: true })
     h2.on('dragend', async (e) => {
       const { lat, lng } = e.target.getLatLng()
-      item.x2 = Math.round(lng)
-      item.y2 = Math.round(lat)
+      const snapped = getSnappedPoint(lat, lng, { lat: item.y1, lng: item.x1 })
+      item.x2 = Math.round(snapped.lng)
+      item.y2 = Math.round(snapped.lat)
       await saveLayoutData(true)
     })
     handlesLayer.addLayer(h2)
@@ -580,31 +627,50 @@ function drawSelectionHandles() {
     })
     handlesLayer.addLayer(h2)
   } else if (type === 'room') {
-    const corners = [
-      { id: 'ne', lat: item.y + item.height, lng: item.x + item.width },
-      { id: 'sw', lat: item.y, lng: item.x },
-    ]
-    corners.forEach(c => {
-      const h = L.marker([c.lat, c.lng], { icon: createHandleIcon('#3b82f6'), draggable: true })
-      h.on('dragend', async (e) => {
-        const { lat, lng } = e.target.getLatLng()
-        const targetLng = Math.round(lng)
-        const targetLat = Math.round(lat)
-        if (c.id === 'ne') {
-          item.width = Math.max(20, targetLng - item.x)
-          item.height = Math.max(20, targetLat - item.y)
-        } else {
-          const oldRight = item.x + item.width
-          const oldTop = item.y + item.height
-          item.x = Math.min(targetLng, oldRight - 20)
-          item.width = oldRight - item.x
-          item.y = Math.min(targetLat, oldTop - 20)
-          item.height = oldTop - item.y
-        }
-        await saveLayoutData(true)
+    if (item.points && Array.isArray(item.points) && item.points.length >= 3) {
+      item.points.forEach((pt, idx) => {
+        const h = L.marker([pt[1], pt[0]], { icon: createHandleIcon('#6366f1'), draggable: true })
+        h.on('dragend', async (e) => {
+          const { lat, lng } = e.target.getLatLng()
+          const snapped = getSnappedPoint(lat, lng)
+          item.points[idx] = [Math.round(snapped.lng), Math.round(snapped.lat)]
+          const xs = item.points.map(p => p[0])
+          const ys = item.points.map(p => p[1])
+          item.x = Math.min(...xs)
+          item.y = Math.min(...ys)
+          item.width = Math.max(...xs) - item.x
+          item.height = Math.max(...ys) - item.y
+          await saveLayoutData(true)
+        })
+        handlesLayer.addLayer(h)
       })
-      handlesLayer.addLayer(h)
-    })
+    } else {
+      const corners = [
+        { id: 'ne', lat: item.y + item.height, lng: item.x + item.width },
+        { id: 'sw', lat: item.y, lng: item.x },
+      ]
+      corners.forEach(c => {
+        const h = L.marker([c.lat, c.lng], { icon: createHandleIcon('#3b82f6'), draggable: true })
+        h.on('dragend', async (e) => {
+          const { lat, lng } = e.target.getLatLng()
+          const targetLng = Math.round(lng)
+          const targetLat = Math.round(lat)
+          if (c.id === 'ne') {
+            item.width = Math.max(20, targetLng - item.x)
+            item.height = Math.max(20, targetLat - item.y)
+          } else {
+            const oldRight = item.x + item.width
+            const oldTop = item.y + item.height
+            item.x = Math.min(targetLng, oldRight - 20)
+            item.width = oldRight - item.x
+            item.y = Math.min(targetLat, oldTop - 20)
+            item.height = oldTop - item.y
+          }
+          await saveLayoutData(true)
+        })
+        handlesLayer.addLayer(h)
+      })
+    }
   } else if (type === 'obstacle' && item.type === 'rect') {
     const corners = [
       { id: 'ne', lat: item.y + item.height, lng: item.x + item.width },
@@ -724,6 +790,90 @@ async function triggerAutoGraph(showSpinner = true) {
   }
 }
 
+// Snapping and Auto-Alignment Engine
+function getSnappedPoint(lat, lng, referencePoint = null) {
+  const snapDist = 18 // px threshold for magnetic vertex snapping
+  let bestDist = snapDist
+  let snappedLat = lat
+  let snappedLng = lng
+  let snappedToVertex = false
+  let orthoSnapped = false
+
+  // 1. Collect all existing vertices from walls and polygon points
+  const endpoints = []
+  for (const w of (layoutData.value.walls || [])) {
+    endpoints.push({ x: w.x1, y: w.y1 })
+    endpoints.push({ x: w.x2, y: w.y2 })
+  }
+  for (const p of polyPoints.value) {
+    endpoints.push({ x: p.lng, y: p.lat })
+  }
+  if (drawingPoint.value) {
+    endpoints.push({ x: drawingPoint.value.lng, y: drawingPoint.value.lat })
+  }
+
+  for (const ep of endpoints) {
+    const dist = Math.hypot(lng - ep.x, lat - ep.y)
+    if (dist < bestDist) {
+      bestDist = dist
+      snappedLng = ep.x
+      snappedLat = ep.y
+      snappedToVertex = true
+    }
+  }
+
+  // 2. Orthogonal Snapping (0°, 90°, 180°, 270°) to reference point
+  if (!snappedToVertex && referencePoint) {
+    const dx = Math.abs(lng - referencePoint.lng)
+    const dy = Math.abs(lat - referencePoint.lat)
+    if (dy <= 12) {
+      snappedLat = referencePoint.lat // Horizontal line
+      orthoSnapped = true
+    } else if (dx <= 12) {
+      snappedLng = referencePoint.lng // Vertical line
+      orthoSnapped = true
+    }
+  }
+
+  return {
+    lat: snappedLat,
+    lng: snappedLng,
+    snappedToVertex,
+    orthoSnapped,
+  }
+}
+
+function finishPolyRoom() {
+  if (polyPoints.value.length < 3) return
+  const points = polyPoints.value.map(p => [Math.round(p.lng), Math.round(p.lat)])
+  addRoomModal.value = {
+    points,
+    title: 'Зона ' + ((layoutData.value.rooms?.length || 0) + 1),
+    color: '#6366f1',
+  }
+  polyPoints.value = []
+  previewLayer?.clearLayers()
+}
+
+function removeLastPolyPoint() {
+  if (polyPoints.value.length > 0) {
+    polyPoints.value.pop()
+    previewLayer?.clearLayers()
+  }
+}
+
+function cancelPolyRoom() {
+  polyPoints.value = []
+  previewLayer?.clearLayers()
+}
+
+function onMapDblClick(e) {
+  if (window.L) window.L.DomEvent.stopPropagation(e)
+  if (mode.value === 'poly-room' && polyPoints.value.length >= 3) {
+    finishPolyRoom()
+  }
+}
+
 // Map Interaction Handlers
 function onMapClick(e) {
   if (!map) return
@@ -750,24 +900,45 @@ function onMapClick(e) {
     return
   }
 
+  if (mode.value === 'poly-room') {
+    const prevPt = polyPoints.value.length > 0 ? polyPoints.value[polyPoints.value.length - 1] : null
+    const snapped = getSnappedPoint(lat, lng, prevPt)
+
+    // Check if clicked near first point to close polygon
+    if (polyPoints.value.length >= 3) {
+      const first = polyPoints.value[0]
+      const distToStart = Math.hypot(lat - first.lat, lng - first.lng)
+      if (distToStart <= 22 || (snapped.snappedToVertex && Math.abs(snapped.lat - first.lat) < 5 && Math.abs(snapped.lng - first.lng) < 5)) {
+        finishPolyRoom()
+        return
+      }
+    }
+
+    polyPoints.value.push({ lat: snapped.lat, lng: snapped.lng })
+    return
+  }
+
   if (mode.value === 'wall') {
+    const snapped = getSnappedPoint(lat, lng, drawingPoint.value)
     if (!drawingPoint.value) {
-      drawingPoint.value = { lat, lng }
+      drawingPoint.value = { lat: snapped.lat, lng: snapped.lng }
     } else {
       const p1 = drawingPoint.value
-      const p2 = { lat, lng }
-      const newWall = {
-        id: 'w_' + Date.now(),
-        x1: Math.round(p1.lng),
-        y1: Math.round(p1.lat),
-        x2: Math.round(p2.lng),
-        y2: Math.round(p2.lat),
-        thickness: 6,
+      const p2 = snapped
+      if (Math.round(p1.lng) !== Math.round(p2.lng) || Math.round(p1.lat) !== Math.round(p2.lat)) {
+        const newWall = {
+          id: 'w_' + Date.now(),
+          x1: Math.round(p1.lng),
+          y1: Math.round(p1.lat),
+          x2: Math.round(p2.lng),
+          y2: Math.round(p2.lat),
+          thickness: 6,
+        }
+        layoutData.value.walls = [...(layoutData.value.walls || []), newWall]
+        saveLayoutData()
       }
-      layoutData.value.walls = [...(layoutData.value.walls || []), newWall]
       drawingPoint.value = null
       previewLayer?.clearLayers()
-      saveLayoutData()
     }
     return
   }
@@ -844,11 +1015,65 @@ function onMapClick(e) {
 }
 
 function onMapMouseMove(e) {
-  if (!previewLayer || !window.L || !drawingPoint.value) return
-  previewLayer.clearLayers()
+  if (!previewLayer || !window.L) return
   const L = window.L
+  const { lat, lng } = e.latlng
+
+  if (mode.value === 'poly-room') {
+    previewLayer.clearLayers()
+    if (polyPoints.value.length === 0) return
+
+    const lastPt = polyPoints.value[polyPoints.value.length - 1]
+    const snapped = getSnappedPoint(lat, lng, lastPt)
+    const pts = [...polyPoints.value.map(p => [p.lat, p.lng]), [snapped.lat, snapped.lng]]
+
+    if (pts.length >= 3) {
+      L.polygon(pts, {
+        color: '#6366f1',
+        weight: 2,
+        dashArray: '5, 5',
+        fillColor: '#818cf8',
+        fillOpacity: 0.25,
+      }).addTo(previewLayer)
+    } else {
+      L.polyline(pts, {
+        color: '#6366f1',
+        weight: 2,
+        dashArray: '5, 5',
+      }).addTo(previewLayer)
+    }
+
+    polyPoints.value.forEach((p, idx) => {
+      const isStart = idx === 0
+      L.circleMarker([p.lat, p.lng], {
+        radius: isStart ? 6 : 4,
+        color: isStart ? '#10b981' : '#6366f1',
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        weight: 2,
+      }).addTo(previewLayer)
+    })
+
+    if (polyPoints.value.length >= 3) {
+      const first = polyPoints.value[0]
+      if (Math.hypot(lat - first.lat, lng - first.lng) <= 22) {
+        L.circleMarker([first.lat, first.lng], {
+          radius: 10,
+          color: '#10b981',
+          fillColor: '#10b981',
+          fillOpacity: 0.5,
+          weight: 2,
+        }).addTo(previewLayer)
+      }
+    }
+    return
+  }
+
+  if (!drawingPoint.value) return
+  previewLayer.clearLayers()
   const p1 = drawingPoint.value
-  const p2 = e.latlng
+  const snapped = getSnappedPoint(lat, lng, p1)
+  const p2 = snapped
 
   if (mode.value === 'wall') {
     L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
@@ -856,6 +1081,24 @@ function onMapMouseMove(e) {
       weight: 6,
       dashArray: '6, 6',
     }).addTo(previewLayer)
+
+    if (snapped.snappedToVertex) {
+      L.circleMarker([p2.lat, p2.lng], {
+        radius: 7,
+        color: '#10b981',
+        fillColor: '#34d399',
+        fillOpacity: 0.8,
+        weight: 2,
+      }).addTo(previewLayer)
+    } else if (snapped.orthoSnapped) {
+      L.circleMarker([p2.lat, p2.lng], {
+        radius: 5,
+        color: '#60a5fa',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.8,
+        weight: 1.5,
+      }).addTo(previewLayer)
+    }
   } else if (mode.value === 'corridor') {
     L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
       color: 'rgba(59, 130, 246, 0.4)',
@@ -883,30 +1126,294 @@ function onMapMouseMove(e) {
 
 function cancelDrawing() {
   drawingPoint.value = null
+  cancelPolyRoom()
   previewLayer?.clearLayers()
 }
 
 // Modal Confirmations
 function confirmAddRoom() {
   if (!addRoomModal.value) return
-  const { p1, p2, title, color } = addRoomModal.value
-  const minX = Math.round(Math.min(p1.lng, p2.lng))
-  const maxX = Math.round(Math.max(p1.lng, p2.lng))
-  const minY = Math.round(Math.min(p1.lat, p2.lat))
-  const maxY = Math.round(Math.max(p1.lat, p2.lat))
+  const { p1, p2, points, title, color } = addRoomModal.value
+  let roomData = null
 
-  const newRoom = {
-    id: 'r_' + Date.now(),
-    title: title || 'Зона',
-    color: color || '#3b82f6',
-    x: minX,
-    y: minY,
-    width: Math.max(10, maxX - minX),
-    height: Math.max(10, maxY - minY),
+  if (points && Array.isArray(points) && points.length >= 3) {
+    const xs = points.map(p => Number(p[0]))
+    const ys = points.map(p => Number(p[1]))
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+    roomData = {
+      id: 'r_' + Date.now(),
+      title: title || 'Зона',
+      color: color || '#6366f1',
+      points: points.map(p => [Math.round(p[0]), Math.round(p[1])]),
+      x: minX,
+      y: minY,
+      width: Math.max(10, maxX - minX),
+      height: Math.max(10, maxY - minY),
+    }
+  } else if (p1 && p2) {
+    const minX = Math.round(Math.min(p1.lng, p2.lng))
+    const maxX = Math.round(Math.max(p1.lng, p2.lng))
+    const minY = Math.round(Math.min(p1.lat, p2.lat))
+    const maxY = Math.round(Math.max(p1.lat, p2.lat))
+    roomData = {
+      id: 'r_' + Date.now(),
+      title: title || 'Зона',
+      color: color || '#3b82f6',
+      x: minX,
+      y: minY,
+      width: Math.max(10, maxX - minX),
+      height: Math.max(10, maxY - minY),
+    }
   }
-  layoutData.value.rooms = [...(layoutData.value.rooms || []), newRoom]
+
+  if (roomData) {
+    layoutData.value.rooms = [...(layoutData.value.rooms || []), roomData]
+  }
   addRoomModal.value = null
   saveLayoutData()
+}
+
+// Alignment & Straightening of Walls
+function alignAndMergeWalls(showNotification = true) {
+  const walls = layoutData.value.walls || []
+  if (walls.length < 2) return
+
+  let alignedCount = 0
+  let gluedCount = 0
+  let mergedCount = 0
+
+  // 1. Orthogonalize walls nearly aligned with horizontal/vertical axes (within 8 deg)
+  const orthoWalls = walls.map(w => {
+    let { x1, y1, x2, y2 } = w
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const len = Math.hypot(dx, dy)
+    if (len < 4) return { ...w }
+    const angle = (Math.abs(Math.atan2(dy, dx)) * 180) / Math.PI
+
+    if (angle <= 8 || angle >= 172) {
+      const avgY = Math.round((y1 + y2) / 2)
+      if (y1 !== avgY || y2 !== avgY) alignedCount++
+      y1 = avgY
+      y2 = avgY
+    } else if (angle >= 82 && angle <= 98) {
+      const avgX = Math.round((x1 + x2) / 2)
+      if (x1 !== avgX || x2 !== avgX) alignedCount++
+      x1 = avgX
+      x2 = avgX
+    }
+    return { ...w, x1, y1, x2, y2 }
+  })
+
+  // 2. Endpoint clustering & gluing (tolerance <= 18px) using Disjoint Set Union
+  const snapTol = 18
+  const pts = []
+  orthoWalls.forEach((w, idx) => {
+    pts.push({ id: `w_${idx}_1`, x: w.x1, y: w.y1, wIdx: idx, ep: 1 })
+    pts.push({ id: `w_${idx}_2`, x: w.x2, y: w.y2, wIdx: idx, ep: 2 })
+  })
+
+  const parent = pts.map((_, i) => i)
+  function findRoot(i) {
+    if (parent[i] === i) return i
+    parent[i] = findRoot(parent[i])
+    return parent[i]
+  }
+  function union(i, j) {
+    const rootI = findRoot(i)
+    const rootJ = findRoot(j)
+    if (rootI !== rootJ) parent[rootI] = rootJ
+  }
+
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) <= snapTol) {
+        union(i, j)
+      }
+    }
+  }
+
+  const clusters = new Map()
+  pts.forEach((pt, idx) => {
+    const root = findRoot(idx)
+    if (!clusters.has(root)) clusters.set(root, [])
+    clusters.get(root).push(pt)
+  })
+
+  const gluedMap = new Map()
+  clusters.forEach(clusterList => {
+    if (clusterList.length > 1) gluedCount += (clusterList.length - 1)
+    const avgX = Math.round(clusterList.reduce((sum, p) => sum + p.x, 0) / clusterList.length)
+    const avgY = Math.round(clusterList.reduce((sum, p) => sum + p.y, 0) / clusterList.length)
+    clusterList.forEach(p => gluedMap.set(p.id, { x: avgX, y: avgY }))
+  })
+
+  let updatedWalls = orthoWalls.map((w, idx) => {
+    const p1 = gluedMap.get(`w_${idx}_1`) || { x: w.x1, y: w.y1 }
+    const p2 = gluedMap.get(`w_${idx}_2`) || { x: w.x2, y: w.y2 }
+    return { ...w, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }
+  })
+
+  // 3. Remove zero-length walls
+  updatedWalls = updatedWalls.filter(w => Math.hypot(w.x2 - w.x1, w.y2 - w.y1) >= 5)
+
+  // 4. Merge collinear contiguous wall segments where degree == 2
+  let changed = true
+  while (changed) {
+    changed = false
+    const ptCount = new Map()
+    const key = (x, y) => `${x},${y}`
+    updatedWalls.forEach(w => {
+      const k1 = key(w.x1, w.y1)
+      const k2 = key(w.x2, w.y2)
+      ptCount.set(k1, (ptCount.get(k1) || 0) + 1)
+      ptCount.set(k2, (ptCount.get(k2) || 0) + 1)
+    })
+
+    for (let i = 0; i < updatedWalls.length; i++) {
+      const w1 = updatedWalls[i]
+      for (let j = i + 1; j < updatedWalls.length; j++) {
+        const w2 = updatedWalls[j]
+        let shared = null
+        let A = null
+        let C = null
+
+        if (w1.x2 === w2.x1 && w1.y2 === w2.y1) {
+          shared = { x: w1.x2, y: w1.y2 }
+          A = { x: w1.x1, y: w1.y1 }
+          C = { x: w2.x2, y: w2.y2 }
+        } else if (w1.x2 === w2.x2 && w1.y2 === w2.y2) {
+          shared = { x: w1.x2, y: w1.y2 }
+          A = { x: w1.x1, y: w1.y1 }
+          C = { x: w2.x1, y: w2.y1 }
+        } else if (w1.x1 === w2.x1 && w1.y1 === w2.y1) {
+          shared = { x: w1.x1, y: w1.y1 }
+          A = { x: w1.x2, y: w1.y2 }
+          C = { x: w2.x2, y: w2.y2 }
+        } else if (w1.x1 === w2.x2 && w1.y1 === w2.y2) {
+          shared = { x: w1.x1, y: w1.y1 }
+          A = { x: w1.x2, y: w1.y2 }
+          C = { x: w2.x1, y: w2.y1 }
+        }
+
+        if (shared && ptCount.get(key(shared.x, shared.y)) === 2) {
+          const v1x = shared.x - A.x
+          const v1y = shared.y - A.y
+          const v2x = C.x - shared.x
+          const v2y = C.y - shared.y
+          const cross = v1x * v2y - v1y * v2x
+          const dot = v1x * v2x + v1y * v2y
+          const len1 = Math.hypot(v1x, v1y)
+          const len2 = Math.hypot(v2x, v2y)
+
+          if (len1 > 0 && len2 > 0 && Math.abs(cross) / (len1 * len2) < 0.08 && dot > 0) {
+            const mergedWall = { ...w1, x1: A.x, y1: A.y, x2: C.x, y2: C.y }
+            updatedWalls.splice(j, 1)
+            updatedWalls[i] = mergedWall
+            mergedCount++
+            changed = true
+            break
+          }
+        }
+      }
+      if (changed) break
+    }
+  }
+
+  layoutData.value.walls = updatedWalls
+  saveLayoutData()
+  if (showNotification) {
+    alert(`🪄 Стены успешно выровнены и склеены!\n• Выровнено по осям (0°/90°): ${alignedCount}\n• Склеено стыков: ${gluedCount}\n• Объединено прямых: ${mergedCount}`)
+  }
+}
+
+// Convert Closed Perimeter of Walls to a Room
+function createRoomFromClosedWalls() {
+  alignAndMergeWalls(false)
+  const walls = layoutData.value.walls || []
+  if (walls.length < 3) {
+    alert('Для сборки зоны нужно как минимум 3 стены.')
+    return
+  }
+
+  const key = (x, y) => `${x},${y}`
+  const parseKey = k => k.split(',').map(Number)
+  const adj = new Map()
+
+  function addEdge(uKey, vKey) {
+    if (!adj.has(uKey)) adj.set(uKey, [])
+    if (!adj.has(vKey)) adj.set(vKey, [])
+    if (!adj.get(uKey).includes(vKey)) adj.get(uKey).push(vKey)
+    if (!adj.get(vKey).includes(uKey)) adj.get(vKey).push(uKey)
+  }
+
+  walls.forEach(w => {
+    const k1 = key(w.x1, w.y1)
+    const k2 = key(w.x2, w.y2)
+    if (k1 !== k2) addEdge(k1, k2)
+  })
+
+  const cycles = []
+  function findCyclesDfs(curr, start, path) {
+    for (const next of (adj.get(curr) || [])) {
+      if (next === start && path.length >= 3) {
+        cycles.push([...path])
+        continue
+      }
+      if (!path.includes(next) && path.length < 24) {
+        findCyclesDfs(next, start, [...path, next])
+      }
+    }
+  }
+
+  for (const startNode of adj.keys()) {
+    if ((adj.get(startNode) || []).length >= 2) {
+      findCyclesDfs(startNode, startNode, [startNode])
+    }
+  }
+
+  if (cycles.length === 0) {
+    alert('Не найден замкнутый контур стен.\n\nУбедитесь, что стены образуют замкнутый периметр без разрывов.')
+    return
+  }
+
+  const validPolygons = []
+  const seenPolys = new Set()
+
+  for (const c of cycles) {
+    const coords = c.map(parseKey)
+    let area = 0
+    for (let i = 0; i < coords.length; i++) {
+      const j = (i + 1) % coords.length
+      area += coords[i][0] * coords[j][1] - coords[j][0] * coords[i][1]
+    }
+    area = area / 2
+
+    if (Math.abs(area) >= 150) {
+      const sortedKeys = [...c].sort().join(';')
+      if (!seenPolys.has(sortedKeys)) {
+        seenPolys.add(sortedKeys)
+        validPolygons.push({ points: coords, area: Math.abs(area) })
+      }
+    }
+  }
+
+  if (validPolygons.length === 0) {
+    alert('Замкнутый контур стен слишком мал или вырожден.')
+    return
+  }
+
+  validPolygons.sort((a, b) => a.area - b.area)
+  const selectedPoly = validPolygons[0]
+
+  addRoomModal.value = {
+    points: selectedPoly.points,
+    title: 'Комната из стен ' + ((layoutData.value.rooms?.length || 0) + 1),
+    color: '#3b82f6',
+  }
 }
 
 function confirmAddCircle() {
@@ -969,6 +1476,9 @@ async function duplicateSelectedElement() {
       x: item.x + offset,
       y: item.y + offset,
       title: item.title ? `${item.title} (копия)` : 'Зона',
+    }
+    if (Array.isArray(item.points)) {
+      copy.points = item.points.map(pt => [pt[0] + offset, pt[1] + offset])
     }
     layoutData.value.rooms = [...(layoutData.value.rooms || []), copy]
     selectedElement.value = { type: 'room', item: copy }
@@ -1174,7 +1684,14 @@ function toggleShowGraph(val) {
 function nudgeSelected(dx, dy) {
   if (!selectedElement.value) return
   const { type, item } = selectedElement.value
-  if (type === 'room' || (type === 'obstacle' && item.type === 'rect')) {
+  if (type === 'room') {
+    item.x = Math.round(item.x + dx)
+    item.y = Math.round(item.y + dy)
+    if (Array.isArray(item.points)) {
+      item.points = item.points.map(pt => [Math.round(pt[0] + dx), Math.round(pt[1] + dy)])
+    }
+    saveLayoutData(true)
+  } else if (type === 'obstacle' && item.type === 'rect') {
     item.x = Math.round(item.x + dx)
     item.y = Math.round(item.y + dy)
     saveLayoutData(true)
@@ -1234,7 +1751,10 @@ function handleKeyDown(e) {
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     const tag = document.activeElement?.tagName?.toLowerCase()
     if (tag !== 'input' && tag !== 'textarea') {
-      if (selectedElement.value && mode.value === 'view') {
+      if (mode.value === 'poly-room') {
+        e.preventDefault()
+        removeLastPolyPoint()
+      } else if (selectedElement.value && mode.value === 'view') {
         e.preventDefault()
         deleteSelectedElement()
       }
@@ -1251,8 +1771,16 @@ function handleKeyDown(e) {
         if (e.key === 'ArrowDown') nudgeSelected(0, -step)
       }
     }
+  } else if (e.key === 'Enter') {
+    if (mode.value === 'poly-room' && polyPoints.value.length >= 3) {
+      e.preventDefault()
+      finishPolyRoom()
+    }
   } else if (e.key === 'Escape') {
-    if (drawingPoint.value) {
+    if (mode.value === 'poly-room') {
+      cancelPolyRoom()
+      mode.value = 'view'
+    } else if (drawingPoint.value) {
       cancelDrawing()
     } else if (selectedElement.value) {
       selectedElement.value = null
@@ -1306,11 +1834,13 @@ onBeforeUnmount(() => {
         @select-floor="onFloorSelected"
         @floor-created="onFloorCreated"
         @upload-plan="showUpload = true; isMobileSidebarOpen = false"
-        @set-mode="mode = $event; cancelDrawing(); selectedElement = null; isMobileSidebarOpen = false"
+        @set-mode="mode = $event; cancelDrawing(); cancelPolyRoom(); selectedElement = null; isMobileSidebarOpen = false"
         @auto-graph="triggerAutoGraph(true)"
         @toggle-show-graph="toggleShowGraph"
         @update:blueprintOpacity="updateBlueprintOpacity"
         @clear-layout="handleClearLayout"
+        @align-walls="alignAndMergeWalls(true)"
+        @walls-to-room="createRoomFromClosedWalls()"
         @start-calib="startCalibration(); isMobileSidebarOpen = false"
         @save-calib="saveCalibration"
         @cancel-calib="calibrating = false; calibPoints = []; calibLayer?.clearLayers(); calibResult = null"
@@ -1345,14 +1875,38 @@ onBeforeUnmount(() => {
 
       <!-- Top Mode Instruction Floating Banner -->
       <div v-if="mode !== 'view'" class="absolute top-4 left-1/2 -translate-x-1/2 z-10 card-glass px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium shadow-xl border border-slate-700/60 backdrop-blur-md max-w-[92vw] text-center">
-        <span v-if="drawingPoint" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+        <span v-if="drawingPoint || polyPoints.length > 0" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
         <span v-else class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shrink-0"></span>
 
         <span v-if="mode === 'room' && !drawingPoint" class="text-slate-100 truncate">Кликните первый угол зоны</span>
         <span v-if="mode === 'room' && drawingPoint" class="text-amber-300 truncate">Кликните второй угол для завершения зоны</span>
 
-        <span v-if="mode === 'wall' && !drawingPoint" class="text-slate-100 truncate">Кликните начальную точку стены</span>
-        <span v-if="mode === 'wall' && drawingPoint" class="text-amber-300 truncate">Кликните конечную точку стены</span>
+        <template v-if="mode === 'poly-room'">
+          <span v-if="polyPoints.length === 0" class="text-slate-100 truncate">Кликайте точки контура зоны (L-образные и любые другие формы)</span>
+          <span v-else class="text-indigo-300 font-mono">Вершин: {{ polyPoints.length }}</span>
+
+          <button
+            v-if="polyPoints.length >= 3"
+            type="button"
+            @click="finishPolyRoom"
+            class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+            title="Замкнуть и создать многоугольную зону"
+          >
+            <Check :size="13" /> Завершить зону
+          </button>
+          <button
+            v-if="polyPoints.length > 0"
+            type="button"
+            @click="removeLastPolyPoint"
+            class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-all cursor-pointer"
+            title="Отменить последнюю точку (Backspace)"
+          >
+            ⌫
+          </button>
+        </template>
+
+        <span v-if="mode === 'wall' && !drawingPoint" class="text-slate-100 truncate">Кликните начало стены (примагничивание к углам)</span>
+        <span v-if="mode === 'wall' && drawingPoint" class="text-amber-300 truncate">Кликните конец стены (авто-выравнивание 90°)</span>
 
         <span v-if="mode === 'circle'" class="text-slate-100 truncate">Кликните для установки колонны</span>
 
@@ -1487,8 +2041,10 @@ onBeforeUnmount(() => {
       <div class="card w-full max-w-sm p-5 space-y-4 shadow-2xl border border-slate-700">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <Square :size="18" class="text-blue-400" />
-            <h3 class="font-semibold text-white text-sm">Новая зона / комната</h3>
+            <component :is="addRoomModal.points ? Shapes : Square" :size="18" :class="addRoomModal.points ? 'text-indigo-400' : 'text-blue-400'" />
+            <h3 class="font-semibold text-white text-sm">
+              {{ addRoomModal.points ? `Зона-многоугольник (${addRoomModal.points.length} вершин)` : 'Новая зона / комната' }}
+            </h3>
           </div>
           <button @click="addRoomModal = null" class="btn btn-ghost p-1"><X :size="16" /></button>
         </div>

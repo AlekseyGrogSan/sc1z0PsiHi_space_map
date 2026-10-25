@@ -197,18 +197,33 @@ function renderFloorPlan() {
     // 1. Комнаты
     if (Array.isArray(layout.rooms)) {
       layout.rooms.forEach((r: any) => {
-        const p1: [number, number] = [r.y, r.x]
-        const p2: [number, number] = [r.y + r.height, r.x + r.width]
-        const rect = L.rectangle([p1, p2], {
-          color: r.color || '#3b82f6',
-          weight: 1.5,
-          fillColor: r.color || '#1e293b',
-          fillOpacity: 0.2,
-        })
-        layoutGroup?.addLayer(rect)
+        let shape: any
+        let center: [number, number]
+        if (r.points && Array.isArray(r.points) && r.points.length >= 3) {
+          const latlngs: [number, number][] = r.points.map((pt: any) => [Number(pt[1]), Number(pt[0])])
+          shape = L.polygon(latlngs, {
+            color: r.color || '#3b82f6',
+            weight: 1.5,
+            fillColor: r.color || '#1e293b',
+            fillOpacity: 0.2,
+          })
+          const avgY = latlngs.reduce((sum, p) => sum + p[0], 0) / latlngs.length
+          const avgX = latlngs.reduce((sum, p) => sum + p[1], 0) / latlngs.length
+          center = [avgY, avgX]
+        } else {
+          const p1: [number, number] = [r.y, r.x]
+          const p2: [number, number] = [r.y + r.height, r.x + r.width]
+          shape = L.rectangle([p1, p2], {
+            color: r.color || '#3b82f6',
+            weight: 1.5,
+            fillColor: r.color || '#1e293b',
+            fillOpacity: 0.2,
+          })
+          center = [r.y + r.height / 2, r.x + r.width / 2]
+        }
+        layoutGroup?.addLayer(shape)
 
         if (r.title) {
-          const center: [number, number] = [r.y + r.height / 2, r.x + r.width / 2]
           const labelIcon = L.divIcon({
             className: 'room-label-icon',
             html: `<div class="text-xs font-semibold text-slate-300/80 text-center uppercase tracking-wider select-none pointer-events-none">${r.title}</div>`,

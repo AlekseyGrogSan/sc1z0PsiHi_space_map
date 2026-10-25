@@ -14,7 +14,7 @@ export type PoiCategory =
   | 'info'
 
 export interface FloorLayout {
-  rooms?: { id: string; title: string; x: number; y: number; width: number; height: number; color?: string }[]
+  rooms?: { id: string; title: string; x?: number; y?: number; width?: number; height?: number; points?: [number, number][]; color?: string }[]
   walls?: { id: string; x1: number; y1: number; x2: number; y2: number; thickness?: number }[]
   corridors?: { id: string; x1: number; y1: number; x2: number; y2: number; width?: number }[]
   obstacles?: { id: string; type: 'circle' | 'rect'; x: number; y: number; radius?: number; width?: number; height?: number; title?: string }[]
