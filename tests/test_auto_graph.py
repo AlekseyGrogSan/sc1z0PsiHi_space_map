@@ -322,3 +322,55 @@ def test_auto_graph_prevents_exterior_nodes_and_wall_clipping():
             assert not line_intersection(p1, p2, w_p1, w_p2), f"Ребро {p1}->{p2} режет стену {w}!"
 
 
+def test_auto_graph_multi_room_segregation_and_no_direct_cuts():
+    """
+    Проверяет сценарий из баг-репорта с 11 комнатами:
+    Маршрут между ЗОНА 3 и ЗОНА 8 не должен напрямую резать промежуточную ЗОНУ 4.
+    В графе не должно быть прямых рёбер между разными комнатами без прохода через двери.
+    """
+    layout = {
+        "rooms": [
+            {"id": "r3", "title": "ЗОНА 3", "x": 50, "y": 200, "width": 200, "height": 150},
+            {"id": "r4", "title": "ЗОНА 4", "x": 250, "y": 200, "width": 200, "height": 150},
+            {"id": "r8", "title": "ЗОНА 8", "x": 450, "y": 200, "width": 200, "height": 150},
+        ],
+        "walls": [
+            {"x1": 50, "y1": 200, "x2": 650, "y2": 200},
+            {"x1": 650, "y1": 200, "x2": 650, "y2": 350},
+            {"x1": 650, "y1": 350, "x2": 50, "y2": 350},
+            {"x1": 50, "y1": 350, "x2": 50, "y2": 200},
+            {"x1": 250, "y1": 200, "x2": 250, "y2": 260},
+            {"x1": 250, "y1": 290, "x2": 250, "y2": 350},
+            {"x1": 450, "y1": 200, "x2": 450, "y2": 260},
+            {"x1": 450, "y1": 290, "x2": 450, "y2": 350},
+        ],
+        "corridors": [],
+        "obstacles": [],
+    }
+    mock_pois = [
+        {"x": 100, "y": 275, "category": "exhibit", "title": "Экспонат А"},
+        {"x": 550, "y": 275, "category": "service", "title": "Стойка Б"},
+    ]
+
+    nodes, edges = generate_auto_graph(700, 700, layout, mock_pois)
+
+    # 1. Проверяем, что нет узлов в пустоте
+    for n in nodes:
+        assert 50 <= n["x"] <= 650, f"Узел {n} за пределами здания по X!"
+        assert 200 <= n["y"] <= 350, f"Узел {n} за пределами здания по Y!"
+
+    # 2. Проверяем изоляцию комнат: ни одно ребро не связывает ЗОНА 3 и ЗОНА 8 напрямую
+    for i1, i2 in edges:
+        r1 = nodes[i1].get("room_id")
+        r2 = nodes[i2].get("room_id")
+        assert not (
+            (r1 == "r3" and r2 == "r8") or (r1 == "r8" and r2 == "r3")
+        ), f"Обнаружено прямое ребро между r3 и r8: {nodes[i1]} <-> {nodes[i2]}"
+
+    # 3. Проверяем, что созданы дверные узлы на границах комнат (x=250 и x=450)
+    door_nodes = [n for n in nodes if n["node_type"] == "door"]
+    assert any(abs(n["x"] - 250.0) < 5.0 and abs(n["y"] - 275.0) < 5.0 for n in door_nodes), "Дверной проем между ЗОНА 3 и ЗОНА 4 не найден!"
+    assert any(abs(n["x"] - 450.0) < 5.0 and abs(n["y"] - 275.0) < 5.0 for n in door_nodes), "Дверной проем между ЗОНА 4 и ЗОНА 8 не найден!"
+
+
+

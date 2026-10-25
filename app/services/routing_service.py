@@ -135,7 +135,7 @@ def _floor_or_error(ctx: _GraphContext, floor_id: uuid.UUID, what: str) -> Floor
     return floor
 
 
-from app.services.auto_graph import is_segment_clear
+from app.services.auto_graph import find_room_for_point, is_segment_clear, is_segment_walkable
 from app.services.pathfinder import (
     WALKING_SPEED_MPS,
     EdgeProjection,
@@ -293,13 +293,22 @@ def _choose_route(
             best = candidate
 
     # Вырожденный случай: А и POI проецируются на ОДНО коридорное ребро —
-    # можно пройти вдоль него, ТОЛЬКО если отрезок А -> POI свободен от стен!
+    # можно пройти вдоль него, ТОЛЬКО если отрезок А -> POI свободен от стен и в одной зоне!
+    start_layout = getattr(start_floor, "layout_data", None) or getattr(start_floor, "layout_json", None) or {}
+    s_rooms = start_layout.get("rooms", [])
+    s_corridors = start_layout.get("corridors", [])
+    room_a = find_room_for_point(req.x, req.y, s_rooms) if s_rooms else None
+    room_b = find_room_for_point(poi.x_coord, poi.y_coord, s_rooms) if s_rooms else None
+    same_room_or_open = (room_a is None or room_b is None or room_a == room_b)
+
     if (
         proj_a is not None
         and proj_b is not None
         and proj_a.edge.id == proj_b.edge.id
         and start_floor.id == target_floor.id
+        and same_room_or_open
         and is_segment_clear((req.x, req.y), (poi.x_coord, poi.y_coord), s_walls, s_circles, s_rects)
+        and is_segment_walkable((req.x, req.y), (poi.x_coord, poi.y_coord), s_rooms, s_corridors, tolerance=5.0)
     ):
         edge = proj_a.edge
         along_m = abs(proj_a.t - proj_b.t) * edge.weight_meters
