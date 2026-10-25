@@ -5,6 +5,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pathlib import Path
+
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.security import hash_password
@@ -17,8 +19,9 @@ from app.services.s3 import s3_service
 
 async def seed():
     print("🌱 Запуск сидера демонстрационных данных...")
-    plan_path = "/home/northbarvinok/Source/sc1z0PsiHi_space_map/demo_assets/floor_1_plan.png"
-    pano_path = "/home/northbarvinok/Source/sc1z0PsiHi_space_map/demo_assets/hall_360_panorama.jpg"
+    assets_dir = Path(__file__).resolve().parent.parent / "demo_assets"
+    plan_path = assets_dir / "floor_1_plan.png"
+    pano_path = assets_dir / "hall_360_panorama.jpg"
 
     with open(plan_path, "rb") as f:
         plan_bytes = f.read()
