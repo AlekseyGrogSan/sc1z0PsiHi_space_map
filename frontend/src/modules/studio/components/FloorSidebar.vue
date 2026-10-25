@@ -4,7 +4,8 @@ import { floorsApi } from '../../../api'
 import {
   MousePointer2, Square, Minus, Circle, Box, Footprints, MapPin,
   Zap, Eye, EyeOff, Sliders, Ruler, Trash2,
-  Layers, Plus, Check, X, Upload, Shapes, Wand2, Magnet
+  Layers, Plus, Check, X, Upload, Shapes, Wand2, Magnet,
+  RotateCw, RotateCcw
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -18,6 +19,10 @@ const props = defineProps({
   blueprintOpacity: {
     type: Number,
     default: 0.85,
+  },
+  blueprintRotation: {
+    type: Number,
+    default: 0,
   },
   showGraph: {
     type: Boolean,
@@ -46,7 +51,7 @@ const emit = defineEmits([
   'auto-graph', 'toggle-show-graph', 'update:blueprintOpacity',
   'clear-layout', 'start-calib', 'save-calib', 'cancel-calib',
   'update:calibDistance', 'update:corridorWidth', 'delete-plan', 'close-mobile',
-  'align-walls', 'walls-to-room',
+  'align-walls', 'walls-to-room', 'rotate-plan',
 ])
 
 const showAddFloor = ref(false)
@@ -369,6 +374,32 @@ const BUILDER_MODES = [
             @input="$emit('update:blueprintOpacity', parseFloat($event.target.value))"
             class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
           />
+
+          <!-- Blueprint Rotation Controls -->
+          <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+            <div class="flex items-center justify-between text-xs text-slate-400">
+              <span class="flex items-center gap-1.5"><RotateCw :size="12" /> Поворот чертежа</span>
+              <span class="font-mono text-slate-300">{{ blueprintRotation }}°</span>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                @click="$emit('rotate-plan', -90)"
+                class="btn btn-ghost text-xs py-1 px-2 flex items-center justify-center gap-1 border border-slate-700/60 hover:bg-slate-800"
+                title="Повернуть чертеж на 90° против часовой стрелки"
+              >
+                <RotateCcw :size="13" /> -90°
+              </button>
+              <button
+                type="button"
+                @click="$emit('rotate-plan', 90)"
+                class="btn btn-ghost text-xs py-1 px-2 flex items-center justify-center gap-1 border border-slate-700/60 hover:bg-slate-800"
+                title="Повернуть чертеж на 90° по часовой стрелке"
+              >
+                <RotateCw :size="13" /> +90°
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

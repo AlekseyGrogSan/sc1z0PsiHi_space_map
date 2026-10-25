@@ -186,11 +186,9 @@ export async function getRoute(body: {
       }
     }
     throw new Error('Маршрут от сервера пуст или имеет некорректный формат')
-  } catch (error) {
-    console.warn(
-      '[getRoute] Не удалось построить маршрут через бэкенд. Применен фоллбек на прямую линию.',
-      error
-    )
-    return generateStraightLineRoute(body.origin, body.destination)
+  } catch (error: any) {
+    const detail = error.response?.data?.detail || error.message || 'Не удалось построить маршрут'
+    console.warn('[getRoute] Ошибка построения маршрута через бэкенд:', detail)
+    throw new Error(detail)
   }
 }

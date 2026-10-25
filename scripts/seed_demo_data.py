@@ -78,45 +78,45 @@ async def seed():
         # 3. Создаем 1 Этаж и загружаем план в MinIO
         DEMO_LAYOUT = {
             "rooms": [
-                {"id": "room-hall", "title": "Входная группа и Регистрация", "x": 50, "y": 700, "width": 650, "height": 450, "color": "#e9ecef"},
-                {"id": "room-conf", "title": "Конференц-зал «ТрансТелеКом»", "x": 1200, "y": 650, "width": 750, "height": 500, "color": "#dee2e6"},
-                {"id": "room-expo", "title": "Экспозиционный зал", "x": 50, "y": 50, "width": 1350, "height": 600, "color": "#ffffff"},
-                {"id": "room-lounge", "title": "Кофе-брейк & Лаундж Зона", "x": 1450, "y": 50, "width": 500, "height": 350, "color": "#feeedf"},
-                {"id": "room-wc", "title": "Санузлы (WC)", "x": 1450, "y": 450, "width": 250, "height": 150, "color": "#eef2f6"},
-                {"id": "room-lobby", "title": "Центральный холл и Эскалаторы", "x": 700, "y": 650, "width": 500, "height": 500, "color": "#f8f9fa"},
+                {"id": "room-hall", "title": "Входная группа и Регистрация", "x": 50, "y": 50, "width": 650, "height": 450, "color": "#e9ecef"},
+                {"id": "room-conf", "title": "Конференц-зал «ТрансТелеКом»", "x": 1200, "y": 50, "width": 750, "height": 500, "color": "#dee2e6"},
+                {"id": "room-expo", "title": "Экспозиционный зал", "x": 50, "y": 550, "width": 1350, "height": 600, "color": "#ffffff"},
+                {"id": "room-lounge", "title": "Кофе-брейк & Лаундж Зона", "x": 1450, "y": 800, "width": 500, "height": 350, "color": "#feeedf"},
+                {"id": "room-wc", "title": "Санузлы (WC)", "x": 1450, "y": 600, "width": 250, "height": 150, "color": "#eef2f6"},
+                {"id": "room-lobby", "title": "Центральный холл и Эскалаторы", "x": 700, "y": 50, "width": 500, "height": 500, "color": "#f8f9fa"},
+                {"id": "stand-1", "title": "Стенд #1: ТТК Цифровые Сервисы", "x": 150, "y": 880, "width": 300, "height": 170, "color": "#d1e7dd"},
+                {"id": "stand-2", "title": "Стенд #2: IoT и Умный Город", "x": 550, "y": 880, "width": 300, "height": 170, "color": "#e2e3e5"},
+                {"id": "stand-3", "title": "Стенд #3: Индор-Навигация", "x": 950, "y": 880, "width": 350, "height": 170, "color": "#cff4fc"},
+                {"id": "stand-4", "title": "Стенд #4: Облачные Решения", "x": 150, "y": 630, "width": 300, "height": 170, "color": "#fff3cd"},
+                {"id": "stand-5", "title": "Стенд #5: Кибербезопасность", "x": 550, "y": 630, "width": 300, "height": 170, "color": "#f8d7da"},
+                {"id": "stand-6", "title": "Стенд #6: Партнерская Зона", "x": 950, "y": 630, "width": 350, "height": 170, "color": "#e2e3e5"},
             ],
             "obstacles": [
-                {"id": "obs-stand-1", "type": "rect", "title": "Стенд #1: ТТК Цифровые Сервисы", "x": 150, "y": 150, "width": 300, "height": 170},
-                {"id": "obs-stand-2", "type": "rect", "title": "Стенд #2: IoT и Умный Город", "x": 550, "y": 150, "width": 300, "height": 170},
-                {"id": "obs-stand-3", "type": "rect", "title": "Стенд #3: Индор-Навигация", "x": 950, "y": 150, "width": 350, "height": 170},
-                {"id": "obs-stand-4", "type": "rect", "title": "Стенд #4: Облачные Решения", "x": 150, "y": 400, "width": 300, "height": 170},
-                {"id": "obs-stand-5", "type": "rect", "title": "Стенд #5: Кибербезопасность", "x": 550, "y": 400, "width": 300, "height": 170},
-                {"id": "obs-stand-6", "type": "rect", "title": "Стенд #6: Партнерская Зона", "x": 950, "y": 400, "width": 350, "height": 170},
-                {"id": "obs-stage", "type": "rect", "title": "Сцена Конференц-зала", "x": 1400, "y": 700, "width": 450, "height": 80},
-                {"id": "obs-stairs", "type": "rect", "title": "Лестница и Лифты на 2 этаж", "x": 780, "y": 780, "width": 340, "height": 180},
+                {"id": "obs-stage", "type": "rect", "title": "Сцена Конференц-зала", "x": 1400, "y": 420, "width": 450, "height": 80},
+                {"id": "obs-stairs", "type": "rect", "title": "Лестница и Лифты на 2 этаж", "x": 780, "y": 250, "width": 340, "height": 180},
             ],
             "walls": [
-                {"x1": 50, "y1": 50, "x2": 1950, "y2": 50},
+                {"x1": 50, "y1": 1150, "x2": 1950, "y2": 1150},
                 {"x1": 1950, "y1": 50, "x2": 1950, "y2": 1150},
-                {"x1": 50, "y1": 1150, "x2": 300, "y2": 1150},
-                {"x1": 460, "y1": 1150, "x2": 1950, "y2": 1150},
+                {"x1": 50, "y1": 50, "x2": 300, "y2": 50},
+                {"x1": 450, "y1": 50, "x2": 1950, "y2": 50},
                 {"x1": 50, "y1": 50, "x2": 50, "y2": 1150},
-                {"x1": 50, "y1": 700, "x2": 300, "y2": 700},
-                {"x1": 440, "y1": 700, "x2": 700, "y2": 700},
-                {"x1": 700, "y1": 700, "x2": 700, "y2": 820},
-                {"x1": 700, "y1": 940, "x2": 700, "y2": 1150},
-                {"x1": 1200, "y1": 650, "x2": 1200, "y2": 820},
-                {"x1": 1200, "y1": 940, "x2": 1200, "y2": 1150},
-                {"x1": 1400, "y1": 50, "x2": 1400, "y2": 300},
-                {"x1": 1400, "y1": 400, "x2": 1400, "y2": 650},
-                {"x1": 1450, "y1": 420, "x2": 1950, "y2": 420},
-                {"x1": 1450, "y1": 620, "x2": 1950, "y2": 620},
+                {"x1": 50, "y1": 500, "x2": 300, "y2": 500},
+                {"x1": 440, "y1": 500, "x2": 700, "y2": 500},
+                {"x1": 700, "y1": 50, "x2": 700, "y2": 260},
+                {"x1": 700, "y1": 380, "x2": 700, "y2": 500},
+                {"x1": 1200, "y1": 50, "x2": 1200, "y2": 260},
+                {"x1": 1200, "y1": 380, "x2": 1200, "y2": 550},
+                {"x1": 1400, "y1": 550, "x2": 1400, "y2": 800},
+                {"x1": 1400, "y1": 900, "x2": 1400, "y2": 1150},
+                {"x1": 1450, "y1": 780, "x2": 1950, "y2": 780},
+                {"x1": 1450, "y1": 580, "x2": 1950, "y2": 580},
             ],
             "corridors": [
-                {"x1": 370, "y1": 1100, "x2": 370, "y2": 650, "width": 60},
-                {"x1": 650, "y1": 880, "x2": 750, "y2": 880, "width": 60},
-                {"x1": 1150, "y1": 880, "x2": 1250, "y2": 880, "width": 60},
-                {"x1": 1350, "y1": 350, "x2": 1480, "y2": 350, "width": 60},
+                {"x1": 375, "y1": 50, "x2": 375, "y2": 550, "width": 60},
+                {"x1": 650, "y1": 320, "x2": 750, "y2": 320, "width": 60},
+                {"x1": 1150, "y1": 320, "x2": 1250, "y2": 320, "width": 60},
+                {"x1": 1350, "y1": 850, "x2": 1450, "y2": 850, "width": 60},
             ],
         }
 
@@ -151,15 +151,14 @@ async def seed():
             await db.flush()
             print("🗺️ 2D-план этажа успешно сохранен в PostgreSQL и MinIO!")
         else:
-            # Обновляем векторную геометрию, если она отсутствовала или пуста
-            if not floor.layout_data or not floor.layout_data.get("walls"):
-                floor.layout_data = DEMO_LAYOUT
-                floor.width_px = 2000
-                floor.height_px = 1200
-                floor.ppm = 20.0
-                db.add(floor)
-                await db.flush()
-                print("📐 Векторная планировка демо-этажа (комнаты, стены, стенды) обновлена в PostgreSQL!")
+            # Актуализируем геометрию и размеры
+            floor.layout_data = DEMO_LAYOUT
+            floor.width_px = 2000
+            floor.height_px = 1200
+            floor.ppm = 20.0
+            db.add(floor)
+            await db.flush()
+            print("📐 Векторная планировка демо-этажа (комнаты, стены, стенды) обновлена в PostgreSQL!")
 
         # 4. Создаем 360-панораму в холле и загружаем в MinIO
         stmt = select(Panorama).where(Panorama.floor_id == floor.id)
@@ -185,8 +184,8 @@ async def seed():
                 id=pano_id,
                 floor_id=floor.id,
                 title="Главный вход и Ресепшн",
-                x_coord=380.0,
-                y_coord=900.0,
+                x_coord=375.0,
+                y_coord=180.0,
                 initial_heading=180.0,
                 status="ready",
                 blurhash=bhash,
@@ -209,8 +208,8 @@ async def seed():
                     title="Главный вход и Регистрация",
                     category=POICategory.ENTRANCE,
                     description="Входная зона для гостей и участников выставки",
-                    x_coord=380.0,
-                    y_coord=1120.0,
+                    x_coord=375.0,
+                    y_coord=80.0,
                     panorama_id=pano.id if pano else None,
                 ),
                 POI(
@@ -220,7 +219,7 @@ async def seed():
                     category=POICategory.STAND,
                     description="Магистральный интернет, приватные каналы связи и CDN",
                     x_coord=300.0,
-                    y_coord=345.0,
+                    y_coord=965.0,
                 ),
                 POI(
                     id=uuid.uuid4(),
@@ -229,7 +228,7 @@ async def seed():
                     category=POICategory.STAND,
                     description="Решения для датчиков, транспорта и умных остановок",
                     x_coord=700.0,
-                    y_coord=345.0,
+                    y_coord=965.0,
                 ),
                 POI(
                     id=uuid.uuid4(),
@@ -238,7 +237,34 @@ async def seed():
                     category=POICategory.STAND,
                     description="Интерактивные 3D-карты, BLE-маяки и цифровые двойники помещений",
                     x_coord=1125.0,
-                    y_coord=345.0,
+                    y_coord=965.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #4: Облачные Решения",
+                    category=POICategory.STAND,
+                    description="Облачные серверы, хранилища и SaaS-платформы",
+                    x_coord=300.0,
+                    y_coord=715.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #5: Кибербезопасность",
+                    category=POICategory.STAND,
+                    description="Защита от DDoS, сетевые экраны и SOC",
+                    x_coord=700.0,
+                    y_coord=715.0,
+                ),
+                POI(
+                    id=uuid.uuid4(),
+                    floor_id=floor.id,
+                    title="Стенд #6: Партнерская Зона",
+                    category=POICategory.STAND,
+                    description="Партнерские решения и интеграционные проекты",
+                    x_coord=1125.0,
+                    y_coord=715.0,
                 ),
                 POI(
                     id=uuid.uuid4(),
@@ -247,7 +273,7 @@ async def seed():
                     category=POICategory.STAGE,
                     description="Главный зал на 250 мест, доклады и круглые столы",
                     x_coord=1600.0,
-                    y_coord=850.0,
+                    y_coord=350.0,
                 ),
                 POI(
                     id=uuid.uuid4(),
@@ -256,7 +282,7 @@ async def seed():
                     category=POICategory.FOOD,
                     description="Горячий кофе, чай, выпечка и зона для нетворкинга",
                     x_coord=1650.0,
-                    y_coord=220.0,
+                    y_coord=980.0,
                 ),
                 POI(
                     id=uuid.uuid4(),
@@ -265,31 +291,37 @@ async def seed():
                     category=POICategory.WC,
                     description="Мужские, женские и санузлы для МГН",
                     x_coord=1575.0,
-                    y_coord=525.0,
+                    y_coord=675.0,
                 ),
             ]
             for p in demo_pois:
                 db.add(p)
             await db.flush()
-            print("📍 Добавлено 7 демонстрационных точек интереса (POI)!")
+            print("📍 Добавлено 10 демонстрационных точек интереса (POI)!")
         else:
             demo_pois = existing_pois
-            # Актуализируем координаты POI в проходах перед стендами
+            # Актуализируем координаты POI в залах и стендах
             for p in demo_pois:
                 if "Стенд #1" in p.title:
-                    p.x_coord, p.y_coord = 300.0, 345.0
+                    p.x_coord, p.y_coord = 300.0, 965.0
                 elif "Стенд #2" in p.title:
-                    p.x_coord, p.y_coord = 700.0, 345.0
+                    p.x_coord, p.y_coord = 700.0, 965.0
                 elif "Стенд #3" in p.title:
-                    p.x_coord, p.y_coord = 1125.0, 345.0
+                    p.x_coord, p.y_coord = 1125.0, 965.0
+                elif "Стенд #4" in p.title:
+                    p.x_coord, p.y_coord = 300.0, 715.0
+                elif "Стенд #5" in p.title:
+                    p.x_coord, p.y_coord = 700.0, 715.0
+                elif "Стенд #6" in p.title:
+                    p.x_coord, p.y_coord = 1125.0, 715.0
                 elif "Конференц-зал" in p.title:
-                    p.x_coord, p.y_coord = 1600.0, 850.0
+                    p.x_coord, p.y_coord = 1600.0, 350.0
                 elif "Кофе" in p.title:
-                    p.x_coord, p.y_coord = 1650.0, 220.0
+                    p.x_coord, p.y_coord = 1650.0, 980.0
                 elif "Санузлы" in p.title:
-                    p.x_coord, p.y_coord = 1575.0, 525.0
+                    p.x_coord, p.y_coord = 1575.0, 675.0
                 elif "Главный вход" in p.title:
-                    p.x_coord, p.y_coord = 380.0, 1120.0
+                    p.x_coord, p.y_coord = 375.0, 80.0
                 db.add(p)
             await db.flush()
 

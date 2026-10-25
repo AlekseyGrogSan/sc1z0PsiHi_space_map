@@ -621,14 +621,18 @@ def generate_auto_graph(
         r_id = str(room.get("id") or room.get("title") or f"room_{idx_r}")
         room_node_map.setdefault(r_id, [])
 
+        # Адаптивный отступ от стен для небольших комнат/стендов
+        wall_clearance = min(12.0, max(6.0, min(rw, rh) / 4.0))
+        obs_clearance = min(14.0, max(8.0, min(rw, rh) / 4.0))
+
         # Центральный узел комнаты (добавляем только если центр свободен от стен и препятствий)
         rc_x = rx + rw / 2.0
         rc_y = ry + rh / 2.0
         rc_idx = -1
         if (poly is None or point_in_polygon(rc_x, rc_y, poly)) and is_point_navigable(
-            rc_x, rc_y, walls, circle_obstacles, rect_obstacles, min_wall_dist=12.0, min_obstacle_dist=14.0
+            rc_x, rc_y, walls, circle_obstacles, rect_obstacles, min_wall_dist=wall_clearance, min_obstacle_dist=obs_clearance
         ):
-            rc_idx = add_node(rc_x, rc_y, node_type="walkway", room_id=r_id)
+            rc_idx = add_node(rc_x, rc_y, node_type="walkway", room_id=r_id, force_inside=True)
             if rc_idx != -1:
                 room_node_map[r_id].append(rc_idx)
 
@@ -649,11 +653,11 @@ def generate_auto_graph(
 
                 # Точка сетки должна быть проходимой (не на стенах и не внутри/вблизи препятствий)
                 if not is_point_navigable(
-                    sx, sy, walls, circle_obstacles, rect_obstacles, min_wall_dist=12.0, min_obstacle_dist=14.0
+                    sx, sy, walls, circle_obstacles, rect_obstacles, min_wall_dist=wall_clearance, min_obstacle_dist=obs_clearance
                 ):
                     continue
 
-                sub_idx = add_node(sx, sy, node_type="walkway", room_id=r_id)
+                sub_idx = add_node(sx, sy, node_type="walkway", room_id=r_id, force_inside=True)
                 if sub_idx != -1:
                     grid_indices[(ix, iy)] = sub_idx
                     room_node_map[r_id].append(sub_idx)

@@ -2,6 +2,23 @@ import math
 import os
 from PIL import Image, ImageDraw, ImageFont
 
+def get_font(size: int):
+    candidates = [
+        "/usr/share/fonts/truetype/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/OpenSans-Regular.ttf",
+        "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+        "DejaVuSans.ttf",
+        "arial.ttf",
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            try:
+                return ImageFont.truetype(c, size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
 def generate_demo_floor_plan(output_path: str):
     """
     Генерирует архитектурный 2D-план этажа выставки ТТК:
@@ -9,6 +26,10 @@ def generate_demo_floor_plan(output_path: str):
     - Главный холл, Экспозона, Конференц-зал, Кофе-поинт, Санузлы, Стенды
     """
     width, height = 2000, 1200
+    font_lg = get_font(24)
+    font_md = get_font(18)
+    font_sm = get_font(14)
+
     # Светло-серый фон чертежа
     img = Image.new("RGB", (width, height), color=(248, 249, 250))
     draw = ImageDraw.Draw(img)
@@ -23,23 +44,23 @@ def generate_demo_floor_plan(output_path: str):
 
     # 1. Главный холл и зона регистрации (слева внизу)
     draw.rectangle([margin, 700, 700, height - margin], outline=(73, 80, 87), width=4, fill=(233, 236, 239))
-    draw.text((150, 900), "ВХОДНАЯ ГРУППА И РЕГИСТРАЦИЯ", fill=(33, 37, 41))
+    draw.text((150, 900), "ВХОДНАЯ ГРУППА И РЕГИСТРАЦИЯ", fill=(33, 37, 41), font=font_lg)
 
     # Главный вход (дверной проем)
     draw.rectangle([300, height - margin - 8, 450, height - margin + 8], fill=(40, 167, 69))
-    draw.text((320, height - margin - 35), "ГЛАВНЫЙ ВХОД", fill=(40, 167, 69))
+    draw.text((310, height - margin - 35), "ГЛАВНЫЙ ВХОД", fill=(40, 167, 69), font=font_md)
 
     # 2. Главный конференц-зал (справа внизу)
     draw.rectangle([1200, 650, width - margin, height - margin], outline=(73, 80, 87), width=4, fill=(222, 226, 230))
-    draw.text((1400, 900), "КОНФЕРЕНЦ-ЗАЛ «ТРАНСТЕЛЕКОМ» (250 мест)", fill=(33, 37, 41))
+    draw.text((1300, 900), "КОНФЕРЕНЦ-ЗАЛ «ТРАНСТЕЛЕКОМ» (250 мест)", fill=(33, 37, 41), font=font_lg)
 
     # Сцена в конференц-зале
     draw.rectangle([1400, 700, 1850, 780], outline=(220, 53, 69), width=3, fill=(248, 215, 218))
-    draw.text((1580, 730), "СЦЕНА", fill=(220, 53, 69))
+    draw.text((1580, 730), "СЦЕНА", fill=(220, 53, 69), font=font_md)
 
     # 3. Экспозона / Выставка стендов (центр и верх)
-    draw.rectangle([ margin, margin, 1400, 650], outline=(73, 80, 87), width=4, fill=(255, 255, 255))
-    draw.text((100, 80), "ЭКСПОЗИЦИОННЫЙ ЗАЛ (СТЕНДЫ КОМПАНИЙ)", fill=(108, 117, 125))
+    draw.rectangle([margin, margin, 1400, 650], outline=(73, 80, 87), width=4, fill=(255, 255, 255))
+    draw.text((100, 80), "ЭКСПОЗИЦИОННЫЙ ЗАЛ (СТЕНДЫ КОМПАНИЙ)", fill=(108, 117, 125), font=font_lg)
 
     # Ряды выставочных стендов (A1, A2, B1, B2, Стенд ТТК)
     stands = [
@@ -52,23 +73,23 @@ def generate_demo_floor_plan(output_path: str):
     ]
     for box, title, fill_c, text_c in stands:
         draw.rectangle(box, outline=(108, 117, 125), width=2, fill=fill_c)
-        draw.text((box[0] + 20, box[1] + 60), title, fill=text_c)
+        draw.text((box[0] + 15, box[1] + 65), title, fill=text_c, font=font_md)
 
     # 4. Кофе-поинт и Лаундж (справа вверху)
     draw.rectangle([1450, margin, width - margin, 400], outline=(73, 80, 87), width=3, fill=(254, 237, 222))
-    draw.text((1550, 200), "КОФЕ-БРЕЙК & ЛАУНДЖ ЗОНА", fill=(147, 83, 31))
+    draw.text((1500, 200), "КОФЕ-БРЕЙК & ЛАУНДЖ ЗОНА", fill=(147, 83, 31), font=font_lg)
 
     # 5. Санузлы (WC)
     draw.rectangle([1450, 450, 1700, 600], outline=(73, 80, 87), width=2, fill=(238, 242, 246))
-    draw.text((1520, 515), "САНУЗЛЫ (WC)", fill=(51, 65, 85))
+    draw.text((1490, 515), "САНУЗЛЫ (WC)", fill=(51, 65, 85), font=font_md)
 
     # 6. Лестница и Лифты на 2 этаж
     draw.rectangle([750, 750, 1150, 950], outline=(13, 110, 253), width=3, fill=(207, 226, 255))
-    draw.text((820, 830), "ЛЕСТНИЦА И ЛИФТ НА 2 ЭТАЖ", fill=(8, 66, 152))
+    draw.text((790, 830), "ЛЕСТНИЦА И ЛИФТ НА 2 ЭТАЖ", fill=(8, 66, 152), font=font_lg)
 
     # Сетка и метки масштаба
     draw.line([(width - 300, height - 30), (width - 100, height - 30)], fill=(0, 0, 0), width=4)
-    draw.text((width - 260, height - 55), "10 МЕТРОВ (PPM=20)", fill=(0, 0, 0))
+    draw.text((width - 260, height - 55), "10 МЕТРОВ (PPM=20)", fill=(0, 0, 0), font=font_sm)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     img.save(output_path, "PNG")
@@ -77,6 +98,7 @@ def generate_demo_floor_plan(output_path: str):
 def generate_demo_panorama(output_path: str):
     """Генерирует тестовую 360-эквидистантную панораму 2:1 (2048x1024)."""
     w, h = 2048, 1024
+    font_pano = get_font(28)
     img = Image.new("RGB", (w, h), color=(180, 200, 220))
     draw = ImageDraw.Draw(img)
 
@@ -91,13 +113,13 @@ def generate_demo_panorama(output_path: str):
     ]
     for x_offset, label in directions:
         draw.line([(x_offset, h // 3), (x_offset, 2 * h // 3)], fill=(100, 120, 140), width=4)
-        draw.text((x_offset + 20, h // 2 - 40), label, fill=(30, 40, 50))
+        draw.text((x_offset + 20, h // 2 - 40), label, fill=(30, 40, 50), font=font_pano)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     img.save(output_path, "JPEG", quality=90)
     print(f"Панорама сохранена: {output_path} ({w}x{h})")
 
 if __name__ == "__main__":
-    base_dir = "/home/northbarvinok/Source/sc1z0PsiHi_space_map/demo_assets"
+    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "demo_assets")
     generate_demo_floor_plan(f"{base_dir}/floor_1_plan.png")
     generate_demo_panorama(f"{base_dir}/hall_360_panorama.jpg")

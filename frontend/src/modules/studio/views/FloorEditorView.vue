@@ -36,6 +36,7 @@ const isMobileSidebarOpen = ref(false) // Mobile tools drawer state
 
 // Blueprint & Graph options
 const blueprintOpacity = ref(0.85)
+const blueprintRotation = ref(0)
 const showGraph = ref(false)
 const generatingGraph = ref(false)
 const savingLayout = ref(false)
@@ -98,7 +99,9 @@ async function loadFloorData() {
     walls: currentFloor.value.layout_data?.walls || [],
     obstacles: currentFloor.value.layout_data?.obstacles || [],
     corridors: currentFloor.value.layout_data?.corridors || [],
+    blueprint_rotation: currentFloor.value.layout_data?.blueprint_rotation || 0,
   }
+  blueprintRotation.value = layoutData.value.blueprint_rotation || 0
 
   const [poisRes, graphRes] = await Promise.allSettled([
     poisApi.list(fid),
@@ -126,6 +129,41 @@ async function loadFloorData() {
   if (map) refreshMapLayers()
 }
 
+// Rotate image overlay via offscreen canvas
+function getRotatedPlanUrl(imageUrl, degrees) {
+  const normDeg = ((degrees % 360) + 360) % 360
+  if (normDeg === 0) return Promise.resolve(imageUrl)
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(imageUrl)
+        if (normDeg === 90 || normDeg === 270) {
+          canvas.width = img.height
+          canvas.height = img.width
+        } else {
+          canvas.width = img.width
+          canvas.height = img.height
+        }
+
+        ctx.translate(canvas.width / 2, canvas.height / 2)
+        ctx.rotate((normDeg * Math.PI) / 180)
+        ctx.drawImage(img, -img.width / 2, -img.height / 2)
+        resolve(canvas.toDataURL('image/png'))
+      } catch (e) {
+        console.warn('Canvas rotation fallback:', e)
+        resolve(imageUrl)
+      }
+    }
+    img.onerror = () => resolve(imageUrl)
+    img.src = imageUrl
+  })
+}
+
 // Leaflet Map Initialization
 async function initMap() {
   const L = (await import('leaflet')).default
@@ -138,9 +176,13 @@ async function initMap() {
   }
 
   const floor = currentFloor.value
-  const planUrl = resolveMediaUrl(floor?.plan_url || floor?.plan_image_url)
-  const w = floor?.width_px || floor?.width || 1400
-  const h = floor?.height_px || floor?.height || 900
+  blueprintRotation.value = floor?.layout_data?.blueprint_rotation || 0
+  const rawPlanUrl = resolveMediaUrl(floor?.plan_url || floor?.plan_image_url)
+  const isSwapped = blueprintRotation.value === 90 || blueprintRotation.value === 270
+  const origW = floor?.width_px || floor?.width || 1400
+  const origH = floor?.height_px || floor?.height || 900
+  const w = isSwapped ? origH : origW
+  const h = isSwapped ? origW : origH
 
   map = L.map('floor-map', {
     crs: L.CRS.Simple,
@@ -153,8 +195,9 @@ async function initMap() {
 
   const bounds = [[0, 0], [h, w]]
 
-  if (planUrl) {
-    overlayLayer = L.imageOverlay(planUrl, bounds, { opacity: blueprintOpacity.value }).addTo(map)
+  if (rawPlanUrl) {
+    const displayUrl = await getRotatedPlanUrl(rawPlanUrl, blueprintRotation.value)
+    overlayLayer = L.imageOverlay(displayUrl, bounds, { opacity: blueprintOpacity.value }).addTo(map)
   }
 
   roomsLayer = L.layerGroup().addTo(map)
@@ -336,7 +379,8 @@ function drawRooms() {
       const label = L.divIcon({
         className: 'room-label-badge',
         html: `<div class="room-title-tag ${isSel ? 'selected' : ''}">${r.title}</div>`,
-        iconAnchor: [50, 10],
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       })
       roomsLayer.addLayer(L.marker(center, { icon: label, interactive: false }))
     }
@@ -431,7 +475,8 @@ function drawObstacles() {
         const label = L.divIcon({
           className: 'obstacle-label-badge',
           html: `<div class="obstacle-tag">${o.title}</div>`,
-          iconAnchor: [35, 10],
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
         })
         obstaclesLayer.addLayer(L.marker([o.y, o.x], { icon: label, interactive: false }))
       }
@@ -1676,6 +1721,34 @@ function updateBlueprintOpacity(val) {
   }
 }
 
+async function handleRotatePlan(delta) {
+  if (!currentFloor.value) return
+  const nextRot = (((blueprintRotation.value + delta) % 360) + 360) % 360
+  blueprintRotation.value = nextRot
+  if (!layoutData.value) {
+    layoutData.value = { rooms: [], walls: [], obstacles: [], corridors: [] }
+  }
+  layoutData.value.blueprint_rotation = nextRot
+  if (currentFloor.value.layout_data) {
+    currentFloor.value.layout_data.blueprint_rotation = nextRot
+  }
+
+  const rawPlanUrl = resolveMediaUrl(currentFloor.value.plan_url || currentFloor.value.plan_image_url)
+  if (overlayLayer && rawPlanUrl && window.L) {
+    const isSwapped = nextRot === 90 || nextRot === 270
+    const origW = currentFloor.value.width_px || currentFloor.value.width || 1400
+    const origH = currentFloor.value.height_px || currentFloor.value.height || 900
+    const w = isSwapped ? origH : origW
+    const h = isSwapped ? origW : origH
+    const bounds = [[0, 0], [h, w]]
+    const displayUrl = await getRotatedPlanUrl(rawPlanUrl, nextRot)
+    overlayLayer.setUrl(displayUrl)
+    overlayLayer.setBounds(bounds)
+    map?.fitBounds(bounds)
+  }
+  await saveLayoutData(false)
+}
+
 function toggleShowGraph(val) {
   showGraph.value = val
   drawNavGraph()
@@ -1824,6 +1897,7 @@ onBeforeUnmount(() => {
         :calibrating="calibrating"
         :calibResult="calibResult"
         :blueprintOpacity="blueprintOpacity"
+        :blueprintRotation="blueprintRotation"
         :showGraph="showGraph"
         :graphStats="graphStats"
         :generatingGraph="generatingGraph"
@@ -1838,6 +1912,7 @@ onBeforeUnmount(() => {
         @auto-graph="triggerAutoGraph(true)"
         @toggle-show-graph="toggleShowGraph"
         @update:blueprintOpacity="updateBlueprintOpacity"
+        @rotate-plan="handleRotatePlan"
         @clear-layout="handleClearLayout"
         @align-walls="alignAndMergeWalls(true)"
         @walls-to-room="createRoomFromClosedWalls()"
@@ -2166,16 +2241,35 @@ onBeforeUnmount(() => {
 }
 
 /* Room & Obstacle Badges */
+.room-label-badge,
+.obstacle-label-badge {
+  background: transparent !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  height: auto !important;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .room-title-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: none;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #94a3b8;
   background: rgba(15, 23, 42, 0.85);
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
   border: 1px solid rgba(71, 85, 105, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
@@ -2187,11 +2281,16 @@ onBeforeUnmount(() => {
 }
 
 .obstacle-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: none;
   font-size: 9px;
   color: #cbd5e1;
   background: rgba(15, 23, 42, 0.8);
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
   white-space: nowrap;
   pointer-events: none;
 }

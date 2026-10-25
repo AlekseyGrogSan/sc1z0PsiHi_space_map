@@ -12,9 +12,42 @@ interface Props {
   isRouting: boolean
   originPoint?: RoutePoint | null
   isPickingOrigin?: boolean
+  blueprintOpacity?: number
 }
 
 const props = defineProps<Props>()
+
+async function getRotatedPlanUrl(imageUrl: string, degrees: number): Promise<string> {
+  const normDeg = ((degrees % 360) + 360) % 360
+  if (normDeg === 0) return imageUrl
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(imageUrl)
+        if (normDeg === 90 || normDeg === 270) {
+          canvas.width = img.height
+          canvas.height = img.width
+        } else {
+          canvas.width = img.width
+          canvas.height = img.height
+        }
+        ctx.translate(canvas.width / 2, canvas.height / 2)
+        ctx.rotate((normDeg * Math.PI) / 180)
+        ctx.drawImage(img, -img.width / 2, -img.height / 2)
+        resolve(canvas.toDataURL('image/png'))
+      } catch (e) {
+        resolve(imageUrl)
+      }
+    }
+    img.onerror = () => resolve(imageUrl)
+    img.src = imageUrl
+  })
+}
 
 const emit = defineEmits<{
   (e: 'selectPoi', poi: POI): void
@@ -177,8 +210,12 @@ function renderFloorPlan() {
     layoutGroup.clearLayers()
   }
 
-  const floorHeight = props.floor.height || (props.floor as any).height_px || 900
-  const floorWidth = props.floor.width || (props.floor as any).width_px || 1400
+  const rot = (props.floor.layout_data as any)?.blueprint_rotation || 0
+  const isSwapped = rot === 90 || rot === 270
+  const origH = props.floor.height || (props.floor as any).height_px || 900
+  const origW = props.floor.width || (props.floor as any).width_px || 1400
+  const floorHeight = isSwapped ? origW : origH
+  const floorWidth = isSwapped ? origH : origW
   const bounds: L.LatLngBoundsExpression = [
     [0, 0],
     [floorHeight, floorWidth],
@@ -188,7 +225,13 @@ function renderFloorPlan() {
   const rawPlanUrl = props.floor.plan_image_url || (props.floor as any).plan_url
   if (rawPlanUrl) {
     const resolvedUrl = resolveMediaUrl(rawPlanUrl)
-    currentOverlay = L.imageOverlay(resolvedUrl, bounds, { opacity: 0.85 }).addTo(map)
+    const op = props.blueprintOpacity !== undefined ? props.blueprintOpacity : 0.85
+    getRotatedPlanUrl(resolvedUrl, rot).then((displayUrl) => {
+      if (currentOverlay && map) {
+        map.removeLayer(currentOverlay)
+      }
+      currentOverlay = L.imageOverlay(displayUrl, bounds, { opacity: op }).addTo(map)
+    })
   }
 
   // Отрисовка 2D-векторных элементов карты (комнаты, стены, препятствия, коридоры)
@@ -226,9 +269,9 @@ function renderFloorPlan() {
         if (r.title) {
           const labelIcon = L.divIcon({
             className: 'room-label-icon',
-            html: `<div class="text-xs font-semibold text-slate-300/80 text-center uppercase tracking-wider select-none pointer-events-none">${r.title}</div>`,
-            iconSize: [140, 20],
-            iconAnchor: [70, 10],
+            html: `<div class="room-title-tag">${r.title}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
           })
           layoutGroup?.addLayer(L.marker(center, { icon: labelIcon, interactive: false }))
         }
@@ -455,6 +498,13 @@ watch(
   }
 )
 
+// Следим за прозрачностью подложки
+watch(() => props.blueprintOpacity, (newVal) => {
+  if (currentOverlay && newVal !== undefined) {
+    currentOverlay.setOpacity(newVal)
+  }
+})
+
 // Следим за точками интереса и выбором
 watch([() => props.pois, () => props.selectedPoi], () => {
   renderMarkers()
@@ -505,10 +555,42 @@ onBeforeUnmount(() => {
 /* Стили для кастомных Leaflet divIcon */
 .poi-custom-div-icon,
 .route-start-icon,
-.route-end-icon,
+.route-end-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 .room-label-icon {
   background: transparent !important;
   border: none !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  height: auto !important;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.room-title-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: none;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.85);
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(71, 85, 105, 0.5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 
 .leaflet-container {

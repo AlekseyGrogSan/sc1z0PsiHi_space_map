@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loader2, AlertCircle, Layers } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Layers, Sliders, X } from 'lucide-vue-next'
 import { getSpaceBySlug, getRoute } from '../api'
 import type { Space, Floor, POI, PoiCategory, RouteResponse, RoutePoint } from '../types'
 import ViewerMap from '../components/ViewerMap.vue'
@@ -35,6 +35,11 @@ const activeRoute = ref<RouteResponse | null>(null)
 const routeOrigin = ref<(RoutePoint & { title?: string; poiId?: string }) | null>(null)
 const routeTarget = ref<POI | null>(null)
 const isPickingStartOnMap = ref(false)
+const routeErrorMessage = ref<string | null>(null)
+
+// Настройка прозрачности подложки для посетителей
+const blueprintOpacity = ref(0.85)
+const showOpacityMenu = ref(false)
 
 // Модалка 360 панорамы
 const isPanoramaOpen = ref(false)
@@ -187,6 +192,8 @@ async function calculateRoute() {
     floor_id: routeTarget.value.floor_id,
   }
 
+  routeErrorMessage.value = null
+
   try {
     const routeData = await getRoute({
       origin,
@@ -197,8 +204,14 @@ async function calculateRoute() {
     activeRoute.value = routeData
     isRouting.value = true
     selectedPoi.value = null
-  } catch (err) {
+  } catch (err: any) {
     console.error('Ошибка расчета маршрута:', err)
+    activeRoute.value = null
+    isRouting.value = false
+    const detail = err.response?.data?.detail || err.message || ''
+    routeErrorMessage.value = detail.includes('No path') || detail.includes('не найден')
+      ? 'Маршрут не найден: между точками нет прохода через граф или путь прегражден стенами.'
+      : 'Не удалось построить маршрут между выбранными точками.'
   }
 }
 
@@ -242,6 +255,7 @@ function handleResetRoute() {
   routeOrigin.value = null
   routeTarget.value = null
   isPickingStartOnMap.value = false
+  routeErrorMessage.value = null
 }
 
 // Открытие виртуального тура 360°
@@ -326,10 +340,107 @@ watch(
           :is-routing="isRouting"
           :origin-point="routeOrigin"
           :is-picking-origin="isPickingStartOnMap"
+          :blueprint-opacity="blueprintOpacity"
           @select-poi="handleSelectPoi"
           @map-click="handleMapClick"
           @update-origin="handleUpdateOrigin"
         />
+      </div>
+
+      <!-- Всплывающее уведомление об ошибке маршрута -->
+      <transition
+        enter-active-class="transition duration-300 ease-out transform"
+        enter-from-class="-translate-y-4 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition duration-200 ease-in transform"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="-translate-y-4 opacity-0"
+      >
+        <div
+          v-if="routeErrorMessage"
+          class="absolute top-20 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] sm:w-auto bg-rose-950/95 border border-rose-500/50 text-rose-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 pointer-events-auto"
+        >
+          <div class="flex items-center gap-2.5">
+            <AlertCircle class="w-5 h-5 text-rose-400 shrink-0" />
+            <span class="text-xs sm:text-sm font-medium">{{ routeErrorMessage }}</span>
+          </div>
+          <button
+            type="button"
+            @click="routeErrorMessage = null"
+            class="text-rose-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </transition>
+
+      <!-- Плавающий контрол прозрачности подложки (для пользователей) -->
+      <div class="absolute left-3 bottom-24 sm:bottom-8 z-20 pointer-events-auto">
+        <div class="relative">
+          <button
+            type="button"
+            @click="showOpacityMenu = !showOpacityMenu"
+            class="w-10 h-10 rounded-xl bg-slate-900/90 border border-slate-700/70 text-slate-300 hover:text-white hover:bg-slate-800 shadow-xl backdrop-blur-md flex items-center justify-center transition-all cursor-pointer"
+            title="Прозрачность подложки чертежа"
+          >
+            <Sliders class="w-5 h-5" />
+          </button>
+
+          <transition
+            enter-active-class="transition duration-150 ease-out transform"
+            enter-from-class="scale-95 opacity-0"
+            enter-to-class="scale-100 opacity-100"
+            leave-active-class="transition duration-100 ease-in transform"
+            leave-from-class="scale-100 opacity-100"
+            leave-to-class="scale-95 opacity-0"
+          >
+            <div
+              v-if="showOpacityMenu"
+              class="absolute bottom-12 left-0 w-60 p-3 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 text-xs text-slate-200 z-50"
+            >
+              <div class="flex items-center justify-between font-medium">
+                <span class="flex items-center gap-1.5 text-slate-300">
+                  <Layers class="w-3.5 h-3.5 text-blue-400" /> Подложка
+                </span>
+                <span class="font-mono text-blue-400 font-semibold">{{ Math.round(blueprintOpacity * 100) }}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                v-model.number="blueprintOpacity"
+                class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+              />
+              <div class="grid grid-cols-3 gap-1 pt-1">
+                <button
+                  type="button"
+                  @click="blueprintOpacity = 0"
+                  class="px-1.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-center font-medium transition-colors"
+                  :class="{ 'ring-1 ring-blue-500 text-blue-400 font-bold': blueprintOpacity === 0 }"
+                >
+                  Только схема
+                </button>
+                <button
+                  type="button"
+                  @click="blueprintOpacity = 0.5"
+                  class="px-1.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-center font-medium transition-colors"
+                  :class="{ 'ring-1 ring-blue-500 text-blue-400 font-bold': blueprintOpacity === 0.5 }"
+                >
+                  50%
+                </button>
+                <button
+                  type="button"
+                  @click="blueprintOpacity = 0.85"
+                  class="px-1.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-center font-medium transition-colors"
+                  :class="{ 'ring-1 ring-blue-500 text-blue-400 font-bold': blueprintOpacity === 0.85 }"
+                >
+                  85%
+                </button>
+              </div>
+            </div>
+          </transition>
+        </div>
       </div>
 
       <!-- ВЕРХНИЙ ОВЕРЛЕЙ: Поиск и чипсы категорий -->
