@@ -265,16 +265,30 @@ function handleResetRoute() {
   routeErrorMessage.value = null
 }
 
+// Возможность виртуального тура 360°
+const canVirtualTour = computed(() => {
+  return !!(
+    (routeTarget.value && routeTarget.value.panorama_id) ||
+    (routeOrigin.value && routeOrigin.value.panorama_id) ||
+    (selectedPoi.value && selectedPoi.value.panorama_id) ||
+    space.value?.pois.some((p) => p.panorama_id)
+  )
+})
+
 // Открытие виртуального тура 360°
 function handleOpenPanorama(poi: POI) {
+  if (!poi || !poi.panorama_id) return
   panoramaPoi.value = poi
   isPanoramaOpen.value = true
 }
 
 function handleOpenVirtualTour() {
-  // Открываем тур для точки назначения маршрута или первого попавшегося стенда
-  const targetPoi = selectedPoi.value || space.value?.pois.find((p) => p.panorama_id)
-  if (targetPoi) {
+  const targetPoi =
+    (routeTarget.value?.panorama_id ? routeTarget.value : null) ||
+    (selectedPoi.value?.panorama_id ? selectedPoi.value : null) ||
+    (routeOrigin.value?.panorama_id ? routeOrigin.value : null) ||
+    space.value?.pois.find((p) => p.panorama_id)
+  if (targetPoi && targetPoi.panorama_id) {
     handleOpenPanorama(targetPoi)
   }
 }
@@ -549,6 +563,7 @@ watch(
           :target-poi-title="routeTarget?.title || selectedPoi?.title"
           :origin-title="routeOrigin?.title"
           :is-picking-origin="isPickingStartOnMap"
+          :has-panorama="canVirtualTour"
           @reset="handleResetRoute"
           @open-virtual-tour="handleOpenVirtualTour"
           @pick-origin-on-map="togglePickOriginOnMap"

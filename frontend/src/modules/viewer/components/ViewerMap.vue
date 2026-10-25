@@ -186,12 +186,98 @@ function getCorridorPolygon(c: any): [number, number][] {
   return pts
 }
 
-function snapPointToNavigable(x: number, y: number): { x: number; y: number } {
-  if (!props.floor.layout_data) return { x, y }
-  const { obstacles, walls } = props.floor.layout_data
+function getFloorNavigableBounds(floor: any): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
-  let curX = x
-  let curY = y
+  const layout = floor?.layout_data
+  if (layout) {
+    // 1. Rooms
+    if (Array.isArray(layout.rooms)) {
+      for (const r of layout.rooms) {
+        if (Array.isArray(r.points) && r.points.length > 0) {
+          for (const pt of r.points) {
+            const px = Number(pt[0]), py = Number(pt[1])
+            if (!isNaN(px) && !isNaN(py)) {
+              minX = Math.min(minX, px)
+              maxX = Math.max(maxX, px)
+              minY = Math.min(minY, py)
+              maxY = Math.max(maxY, py)
+            }
+          }
+        } else if (r.x !== undefined && r.y !== undefined) {
+          const rx = Number(r.x), ry = Number(r.y)
+          const rw = Number(r.width || 0), rh = Number(r.height || 0)
+          minX = Math.min(minX, rx)
+          maxX = Math.max(maxX, rx + rw)
+          minY = Math.min(minY, ry)
+          maxY = Math.max(maxY, ry + rh)
+        }
+      }
+    }
+
+    // 2. Walls
+    if (Array.isArray(layout.walls)) {
+      for (const w of layout.walls) {
+        minX = Math.min(minX, Number(w.x1), Number(w.x2))
+        maxX = Math.max(maxX, Number(w.x1), Number(w.x2))
+        minY = Math.min(minY, Number(w.y1), Number(w.y2))
+        maxY = Math.max(maxY, Number(w.y1), Number(w.y2))
+      }
+    }
+
+    // 3. Corridors
+    if (Array.isArray(layout.corridors)) {
+      for (const c of layout.corridors) {
+        const halfW = (Number(c.width) || 35) / 2
+        minX = Math.min(minX, Number(c.x1) - halfW, Number(c.x2) - halfW)
+        maxX = Math.max(maxX, Number(c.x1) + halfW, Number(c.x2) + halfW)
+        minY = Math.min(minY, Number(c.y1) - halfW, Number(c.y2) - halfW)
+        maxY = Math.max(maxY, Number(c.y1) + halfW, Number(c.y2) + halfW)
+      }
+    }
+
+    // 4. Obstacles
+    if (Array.isArray(layout.obstacles)) {
+      for (const o of layout.obstacles) {
+        if (o.type === 'circle') {
+          const r = Number(o.radius || 30)
+          minX = Math.min(minX, Number(o.x) - r)
+          maxX = Math.max(maxX, Number(o.x) + r)
+          minY = Math.min(minY, Number(o.y) - r)
+          maxY = Math.max(maxY, Number(o.y) + r)
+        } else {
+          minX = Math.min(minX, Number(o.x))
+          maxX = Math.max(maxX, Number(o.x) + Number(o.width || 0))
+          minY = Math.min(minY, Number(o.y))
+          maxY = Math.max(maxY, Number(o.y) + Number(o.height || 0))
+        }
+      }
+    }
+  }
+
+  const fw = floor?.width || floor?.width_px || 1600
+  const fh = floor?.height || floor?.height_px || 900
+
+  if (minX === Infinity || maxX === -Infinity) {
+    return { minX: 0, minY: 0, maxX: fw, maxY: fh }
+  }
+
+  return {
+    minX: Math.max(0, Math.round(minX)),
+    minY: Math.max(0, Math.round(minY)),
+    maxX: Math.min(fw, Math.round(maxX)),
+    maxY: Math.min(fh, Math.round(maxY)),
+  }
+}
+
+function snapPointToNavigable(x: number, y: number): { x: number; y: number } {
+  const bounds = getFloorNavigableBounds(props.floor)
+  const margin = 12
+  let curX = Math.max(bounds.minX + margin, Math.min(bounds.maxX - margin, x))
+  let curY = Math.max(bounds.minY + margin, Math.min(bounds.maxY - margin, y))
+
+  if (!props.floor.layout_data) return { x: curX, y: curY }
+  const { obstacles, walls } = props.floor.layout_data
 
   // 1. Проверка круглых препятствий
   if (Array.isArray(obstacles)) {
@@ -252,6 +338,10 @@ function snapPointToNavigable(x: number, y: number): { x: number; y: number } {
     }
   }
 
+  // Финальное удержание внутри общих границ этажа
+  curX = Math.max(bounds.minX + margin, Math.min(bounds.maxX - margin, curX))
+  curY = Math.max(bounds.minY + margin, Math.min(bounds.maxY - margin, curY))
+
   return { x: curX, y: curY }
 }
 
@@ -281,6 +371,18 @@ function initMap() {
   map.on('click', (e) => {
     const rawX = Math.round(e.latlng.lng)
     const rawY = Math.round(e.latlng.lat)
+    const bounds = getFloorNavigableBounds(props.floor)
+
+    // Игнорируем клики в далекой темной пустоте за границами пространства
+    if (
+      rawX < bounds.minX - 100 ||
+      rawX > bounds.maxX + 100 ||
+      rawY < bounds.minY - 100 ||
+      rawY > bounds.maxY + 100
+    ) {
+      return
+    }
+
     const snapped = snapPointToNavigable(rawX, rawY)
     emit('mapClick', {
       x: snapped.x,
@@ -328,6 +430,12 @@ function renderFloorPlan() {
     [0, 0],
     [floorHeight, floorWidth],
   ]
+
+  const navBounds = getFloorNavigableBounds(props.floor)
+  map.setMaxBounds([
+    [navBounds.minY - 150, navBounds.minX - 150],
+    [navBounds.maxY + 150, navBounds.maxX + 150],
+  ])
 
   // Фоновая подложка чертежа (если загружена)
   const rawPlanUrl = props.floor.plan_image_url || (props.floor as any).plan_url

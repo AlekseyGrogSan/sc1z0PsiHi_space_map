@@ -24,7 +24,24 @@ const isDragging = ref(false)
 const panX = ref(0)
 const startX = ref(0)
 
+const isLoadingPannellum = ref(true)
+const loadError = ref(false)
+let watchdogTimer: any = null
+
 function initPannellum() {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer)
+    watchdogTimer = null
+  }
+  loadError.value = false
+  isLoadingPannellum.value = true
+
+  if (!props.poi?.panorama_id) {
+    hasPannellum.value = false
+    isLoadingPannellum.value = false
+    return
+  }
+
   if (viewer.value) {
     try {
       viewer.value.destroy()
@@ -54,12 +71,50 @@ function initPannellum() {
             showControls: true,
             title: props.poi?.title || 'Панорама 360°'
           })
+
+          if (viewer.value && typeof viewer.value.on === 'function') {
+            viewer.value.on('load', () => {
+              isLoadingPannellum.value = false
+              hasPannellum.value = true
+              if (watchdogTimer) {
+                clearTimeout(watchdogTimer)
+                watchdogTimer = null
+              }
+            })
+
+            viewer.value.on('error', (err: any) => {
+              console.warn('Pannellum error, switching to interactive fallback:', err)
+              isLoadingPannellum.value = false
+              hasPannellum.value = false
+              loadError.value = true
+              if (watchdogTimer) {
+                clearTimeout(watchdogTimer)
+                watchdogTimer = null
+              }
+            })
+          }
+
+          // Watchdog timer: fallback after 3.5s if Pannellum hangs on missing tiles
+          watchdogTimer = setTimeout(() => {
+            if (isLoadingPannellum.value) {
+              console.warn('Pannellum load timed out, switching to interactive fallback')
+              isLoadingPannellum.value = false
+              hasPannellum.value = false
+              loadError.value = true
+            }
+          }, 3500)
+
           hasPannellum.value = true
         } catch (e) {
           console.warn('Pannellum modal init failed, using fallback:', e)
           hasPannellum.value = false
+          isLoadingPannellum.value = false
+          loadError.value = true
         }
       }
+    } else {
+      hasPannellum.value = false
+      isLoadingPannellum.value = false
     }
   })
 }
@@ -142,6 +197,10 @@ function onTouchEnd() {
 }
 
 onBeforeUnmount(() => {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer)
+    watchdogTimer = null
+  }
   if (viewer.value) {
     try {
       viewer.value.destroy()
@@ -217,6 +276,14 @@ onBeforeUnmount(() => {
             transform: `translateX(${panX % 1000}px)`,
           }"
         ></div>
+
+        <!-- Уведомление об интерактивном режиме при сбое кубической панорамы -->
+        <div
+          v-if="loadError"
+          class="absolute top-3 left-3 right-3 flex items-center gap-2 text-[11px] text-amber-200 bg-slate-950/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-amber-500/40 shadow-lg pointer-events-none z-10"
+        >
+          <span>ℹ️ Панорамные тайлы загружаются. Включен интерактивный обзор 360°.</span>
+        </div>
 
         <!-- Кнопка гироскопа в углу панорамы -->
         <button

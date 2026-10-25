@@ -181,6 +181,88 @@ def _snap_to_navigable(
     return x, y
 
 
+def _get_floor_navigable_bounds(floor: Floor) -> Tuple[float, float, float, float]:
+    """Вычисляет общие охватывающие границы (min_x, min_y, max_x, max_y) этажа."""
+    layout = floor.layout_data or {}
+    rooms = layout.get("rooms", [])
+    walls = layout.get("walls", [])
+    corridors = layout.get("corridors", [])
+    obstacles = layout.get("obstacles", [])
+
+    min_x = float("inf")
+    min_y = float("inf")
+    max_x = float("-inf")
+    max_y = float("-inf")
+
+    for r in rooms:
+        pts = r.get("points")
+        if pts and isinstance(pts, list):
+            for pt in pts:
+                try:
+                    px, py = float(pt[0]), float(pt[1])
+                    min_x = min(min_x, px)
+                    max_x = max(max_x, px)
+                    min_y = min(min_y, py)
+                    max_y = max(max_y, py)
+                except (ValueError, TypeError, IndexError):
+                    pass
+        elif "x" in r and "y" in r:
+            rx, ry = float(r["x"]), float(r["y"])
+            rw, rh = float(r.get("width", 0)), float(r.get("height", 0))
+            min_x = min(min_x, rx)
+            max_x = max(max_x, rx + rw)
+            min_y = min(min_y, ry)
+            max_y = max(max_y, ry + rh)
+
+    for w in walls:
+        try:
+            x1, y1 = float(w.get("x1", 0)), float(w.get("y1", 0))
+            x2, y2 = float(w.get("x2", 0)), float(w.get("y2", 0))
+            min_x = min(min_x, x1, x2)
+            max_x = max(max_x, x1, x2)
+            min_y = min(min_y, y1, y2)
+            max_y = max(max_y, y1, y2)
+        except (ValueError, TypeError):
+            pass
+
+    for c in corridors:
+        try:
+            hw = float(c.get("width", 35)) / 2.0
+            x1, y1 = float(c.get("x1", 0)), float(c.get("y1", 0))
+            x2, y2 = float(c.get("x2", 0)), float(c.get("y2", 0))
+            min_x = min(min_x, x1 - hw, x2 - hw)
+            max_x = max(max_x, x1 + hw, x2 + hw)
+            min_y = min(min_y, y1 - hw, y2 - hw)
+            max_y = max(max_y, y1 + hw, y2 + hw)
+        except (ValueError, TypeError):
+            pass
+
+    for o in obstacles:
+        try:
+            ox, oy = float(o.get("x", 0)), float(o.get("y", 0))
+            if o.get("type") == "circle":
+                rad = float(o.get("radius", 30))
+                min_x = min(min_x, ox - rad)
+                max_x = max(max_x, ox + rad)
+                min_y = min(min_y, oy - rad)
+                max_y = max(max_y, oy + rad)
+            else:
+                ow, oh = float(o.get("width", 0)), float(o.get("height", 0))
+                min_x = min(min_x, ox)
+                max_x = max(max_x, ox + ow)
+                min_y = min(min_y, oy)
+                max_y = max(max_y, oy + oh)
+        except (ValueError, TypeError):
+            pass
+
+    fw = float(floor.width or 1600.0)
+    fh = float(floor.height or 900.0)
+    if min_x == float("inf"):
+        return 0.0, 0.0, fw, fh
+
+    return max(0.0, min_x), max(0.0, min_y), min(fw, max_x), min(fh, max_y)
+
+
 def _entry_candidates(
     ctx: _GraphContext,
     x: float,
@@ -204,6 +286,12 @@ def _entry_candidates(
     circles_list = circle_obstacles or []
     rects_list = rect_obstacles or []
     rooms_list = (floor.layout_data or {}).get("rooms", [])
+
+    # Ограничиваем точку общими проходимыми границами этажа (не даем уйти в темную пустоту)
+    min_x, min_y, max_x, max_y = _get_floor_navigable_bounds(floor)
+    margin = 5.0
+    x = max(min_x + margin, min(max_x - margin, x))
+    y = max(min_y + margin, min(max_y - margin, y))
 
     # Мягко смещаем точку, если она упала внутрь препятствия или стены
     x, y = _snap_to_navigable(x, y, walls_list, circles_list, rects_list, rooms_list)

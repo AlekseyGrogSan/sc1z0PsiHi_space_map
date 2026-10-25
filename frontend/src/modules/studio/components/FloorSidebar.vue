@@ -44,6 +44,10 @@ const props = defineProps({
     type: Number,
     default: 35,
   },
+  isGraphDirty: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits([
@@ -257,7 +261,8 @@ const BUILDER_MODES = [
     <div class="px-4 py-3 border-b" style="border-color: var(--border)">
       <div class="flex items-center justify-between mb-2">
         <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--text-muted)">Навигационный граф</p>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Авто</span>
+        <span v-if="isGraphDirty" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">Нужен расчёт</span>
+        <span v-else class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Актуален</span>
       </div>
 
       <div class="space-y-2">
@@ -265,11 +270,14 @@ const BUILDER_MODES = [
           id="btn-auto-graph"
           @click="$emit('auto-graph')"
           :disabled="generatingGraph"
-          class="btn btn-primary w-full justify-center text-xs py-2 gap-2"
+          class="btn w-full justify-center text-xs py-2 gap-2 font-semibold transition-all shadow-md active:scale-95"
+          :class="isGraphDirty
+            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 ring-2 ring-amber-400/30'
+            : 'btn-primary'"
         >
-          <span v-if="generatingGraph" class="spinner w-3.5 h-3.5"></span>
+          <span v-if="generatingGraph" class="spinner w-3.5 h-3.5" :class="isGraphDirty ? 'border-slate-950' : ''"></span>
           <Zap v-else :size="14" />
-          {{ generatingGraph ? 'Расчёт путей...' : '⚡ Сгенерировать граф' }}
+          {{ generatingGraph ? 'Расчёт путей...' : (isGraphDirty ? '⚡ Сохранить и пересчитать' : '⚡ Пересчитать граф') }}
         </button>
 
         <div class="flex items-center justify-between pt-1">

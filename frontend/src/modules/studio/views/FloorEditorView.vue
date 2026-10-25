@@ -40,6 +40,7 @@ const blueprintRotation = ref(0)
 const showGraph = ref(false)
 const generatingGraph = ref(false)
 const savingLayout = ref(false)
+const isGraphDirty = ref(false)
 const graphStats = ref({ nodes: 0, edges: 0 })
 
 // Calibration
@@ -332,7 +333,7 @@ function drawRooms() {
           r.width = Math.max(...xs) - r.x
           r.height = Math.max(...ys) - r.y
           selectedElement.value = { type: 'room', item: r }
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         },
         onClick: () => {
           selectedElement.value = { type: 'room', item: r }
@@ -364,7 +365,7 @@ function drawRooms() {
           r.x = Math.round(origX + dx)
           r.y = Math.round(origY + dy)
           selectedElement.value = { type: 'room', item: r }
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         },
         onClick: () => {
           selectedElement.value = { type: 'room', item: r }
@@ -469,7 +470,7 @@ function drawCorridors() {
         c.x2 = Math.round(origX2 + dx)
         c.y2 = Math.round(origY2 + dy)
         selectedElement.value = { type: 'corridor', item: c }
-        await saveLayoutData(true)
+        await saveLayoutData(false)
       },
       onClick: () => {
         selectedElement.value = { type: 'corridor', item: c }
@@ -510,7 +511,7 @@ function drawObstacles() {
           o.x = Math.round(origX + dx)
           o.y = Math.round(origY + dy)
           selectedElement.value = { type: 'obstacle', item: o }
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         },
         onClick: () => {
           selectedElement.value = { type: 'obstacle', item: o }
@@ -551,7 +552,7 @@ function drawObstacles() {
           o.x = Math.round(origX + dx)
           o.y = Math.round(origY + dy)
           selectedElement.value = { type: 'obstacle', item: o }
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         },
         onClick: () => {
           selectedElement.value = { type: 'obstacle', item: o }
@@ -596,7 +597,7 @@ function drawWalls() {
         w.x2 = Math.round(origX2 + dx)
         w.y2 = Math.round(origY2 + dy)
         selectedElement.value = { type: 'wall', item: w }
-        await saveLayoutData(true)
+        await saveLayoutData(false)
       },
       onClick: () => {
         selectedElement.value = { type: 'wall', item: w }
@@ -639,15 +640,16 @@ function drawPois() {
 
     marker.on('dragend', async (e) => {
       const { lat, lng } = e.target.getLatLng()
-      const npx = Math.round(lng)
-      const npy = Math.round(lat)
+      const b = getFloorNavigableBounds()
+      const npx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
+      const npy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
       poi.y_coord = npy
       poi.x_coord = npx
       poi.x = npx
       poi.y = npy
       selectedElement.value = { type: 'poi', item: poi }
       await poisApi.update(poi.id, { y_coord: npy, x_coord: npx })
-      await triggerAutoGraph(false)
+      isGraphDirty.value = true
       refreshMapLayers()
     })
 
@@ -688,7 +690,7 @@ function drawSelectionHandles() {
       const snapped = getSnappedPoint(lat, lng, { lat: item.y2, lng: item.x2 })
       item.x1 = Math.round(snapped.lng)
       item.y1 = Math.round(snapped.lat)
-      await saveLayoutData(true)
+      await saveLayoutData(false)
     })
     handlesLayer.addLayer(h1)
 
@@ -698,7 +700,7 @@ function drawSelectionHandles() {
       const snapped = getSnappedPoint(lat, lng, { lat: item.y1, lng: item.x1 })
       item.x2 = Math.round(snapped.lng)
       item.y2 = Math.round(snapped.lat)
-      await saveLayoutData(true)
+      await saveLayoutData(false)
     })
     handlesLayer.addLayer(h2)
   } else if (type === 'corridor') {
@@ -707,7 +709,7 @@ function drawSelectionHandles() {
       const { lat, lng } = e.target.getLatLng()
       item.x1 = Math.round(lng)
       item.y1 = Math.round(lat)
-      await saveLayoutData(true)
+      await saveLayoutData(false)
     })
     handlesLayer.addLayer(h1)
 
@@ -716,7 +718,7 @@ function drawSelectionHandles() {
       const { lat, lng } = e.target.getLatLng()
       item.x2 = Math.round(lng)
       item.y2 = Math.round(lat)
-      await saveLayoutData(true)
+      await saveLayoutData(false)
     })
     handlesLayer.addLayer(h2)
   } else if (type === 'room') {
@@ -733,7 +735,7 @@ function drawSelectionHandles() {
           item.y = Math.min(...ys)
           item.width = Math.max(...xs) - item.x
           item.height = Math.max(...ys) - item.y
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         })
         handlesLayer.addLayer(h)
       })
@@ -759,7 +761,7 @@ function drawSelectionHandles() {
             item.y = Math.min(targetLat, oldTop - 20)
             item.height = oldTop - item.y
           }
-          await saveLayoutData(true)
+          await saveLayoutData(false)
         })
         handlesLayer.addLayer(h)
       })
@@ -786,7 +788,7 @@ function drawSelectionHandles() {
           item.y = Math.min(targetLat, oldTop - 10)
           item.height = oldTop - item.y
         }
-        await saveLayoutData(true)
+        await saveLayoutData(false)
       })
       handlesLayer.addLayer(h)
     })
@@ -799,7 +801,7 @@ function drawSelectionHandles() {
       const dx = lng - item.x
       const dy = lat - item.y
       item.radius = Math.max(10, Math.round(Math.sqrt(dx * dx + dy * dy)))
-      await saveLayoutData(true)
+      await saveLayoutData(false)
     })
     handlesLayer.addLayer(rh)
   }
@@ -841,10 +843,90 @@ function drawNavGraph() {
   })
 }
 
-// Save Layout to Backend and Auto-Trigger Backend Graph
-async function saveLayoutData(triggerGraph = true) {
+// Compute Navigable / Outer Floor Bounds
+function getFloorNavigableBounds() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const layout = layoutData.value || {}
+
+  if (Array.isArray(layout.rooms)) {
+    for (const r of layout.rooms) {
+      if (Array.isArray(r.points) && r.points.length > 0) {
+        for (const pt of r.points) {
+          const px = Number(pt[0]), py = Number(pt[1])
+          if (!isNaN(px) && !isNaN(py)) {
+            minX = Math.min(minX, px)
+            maxX = Math.max(maxX, px)
+            minY = Math.min(minY, py)
+            maxY = Math.max(maxY, py)
+          }
+        }
+      } else if (r.x !== undefined && r.y !== undefined) {
+        const rx = Number(r.x), ry = Number(r.y)
+        const rw = Number(r.width || 0), rh = Number(r.height || 0)
+        minX = Math.min(minX, rx)
+        maxX = Math.max(maxX, rx + rw)
+        minY = Math.min(minY, ry)
+        maxY = Math.max(maxY, ry + rh)
+      }
+    }
+  }
+
+  if (Array.isArray(layout.walls)) {
+    for (const w of layout.walls) {
+      minX = Math.min(minX, Number(w.x1), Number(w.x2))
+      maxX = Math.max(maxX, Number(w.x1), Number(w.x2))
+      minY = Math.min(minY, Number(w.y1), Number(w.y2))
+      maxY = Math.max(maxY, Number(w.y1), Number(w.y2))
+    }
+  }
+
+  if (Array.isArray(layout.corridors)) {
+    for (const c of layout.corridors) {
+      const halfW = (Number(c.width) || 35) / 2
+      minX = Math.min(minX, Number(c.x1) - halfW, Number(c.x2) - halfW)
+      maxX = Math.max(maxX, Number(c.x1) + halfW, Number(c.x2) + halfW)
+      minY = Math.min(minY, Number(c.y1) - halfW, Number(c.y2) - halfW)
+      maxY = Math.max(maxY, Number(c.y1) + halfW, Number(c.y2) + halfW)
+    }
+  }
+
+  if (Array.isArray(layout.obstacles)) {
+    for (const o of layout.obstacles) {
+      if (o.type === 'circle') {
+        const r = Number(o.radius || 30)
+        minX = Math.min(minX, Number(o.x) - r)
+        maxX = Math.max(maxX, Number(o.x) + r)
+        minY = Math.min(minY, Number(o.y) - r)
+        maxY = Math.max(maxY, Number(o.y) + r)
+      } else {
+        minX = Math.min(minX, Number(o.x))
+        maxX = Math.max(maxX, Number(o.x) + Number(o.width || 0))
+        minY = Math.min(minY, Number(o.y))
+        maxY = Math.max(maxY, Number(o.y) + Number(o.height || 0))
+      }
+    }
+  }
+
+  const fw = currentFloor.value?.width || currentFloor.value?.width_px || 1600
+  const fh = currentFloor.value?.height || currentFloor.value?.height_px || 900
+
+  if (minX === Infinity || maxX === -Infinity) {
+    return { minX: 0, minY: 0, maxX: fw, maxY: fh }
+  }
+
+  return {
+    minX: Math.max(0, Math.round(minX)),
+    minY: Math.max(0, Math.round(minY)),
+    maxX: Math.min(fw, Math.round(maxX)),
+    maxY: Math.min(fh, Math.round(maxY)),
+  }
+}
+
+// Save Layout to Backend (does NOT calculate graph automatically)
+async function saveLayoutData(triggerGraph = false) {
   if (!currentFloor.value) return
   savingLayout.value = true
+  isGraphDirty.value = true
   try {
     const { data: updatedFloor } = await floorsApi.saveLayout(currentFloor.value.id, layoutData.value)
     if (updatedFloor) {
@@ -874,6 +956,7 @@ async function triggerAutoGraph(showSpinner = true) {
         nodes: navNodes.value.length,
         edges: navEdges.value.length,
       }
+      isGraphDirty.value = false
       refreshMapLayers()
     }
   } catch (err) {
@@ -881,6 +964,13 @@ async function triggerAutoGraph(showSpinner = true) {
   } finally {
     if (showSpinner) generatingGraph.value = false
   }
+}
+
+// Explicit User Action: Save & Build Navigation Graph
+async function handleBuildGraph() {
+  await saveLayoutData(false)
+  await triggerAutoGraph(true)
+  isGraphDirty.value = false
 }
 
 // Snapping and Auto-Alignment Engine
@@ -979,7 +1069,10 @@ function onMapClick(e) {
   }
 
   if (mode.value === 'poi') {
-    addPoiModal.value = { x: lng, y: lat }
+    const b = getFloorNavigableBounds()
+    const cx = Math.max(b.minX + 5, Math.min(b.maxX - 5, Math.round(lng)))
+    const cy = Math.max(b.minY + 5, Math.min(b.maxY - 5, Math.round(lat)))
+    addPoiModal.value = { x: cx, y: cy }
     return
   }
 
@@ -1534,22 +1627,22 @@ async function deleteSelectedElement() {
     try {
       await poisApi.delete(item.id)
       pois.value = pois.value.filter(p => p.id !== item.id)
-      await triggerAutoGraph(false)
+      isGraphDirty.value = true
     } catch (err) {
       console.error('Ошибка удаления POI:', err)
     }
   } else if (type === 'wall') {
     layoutData.value.walls = (layoutData.value.walls || []).filter(w => w.id !== item.id)
-    await saveLayoutData()
+    await saveLayoutData(false)
   } else if (type === 'room') {
     layoutData.value.rooms = (layoutData.value.rooms || []).filter(r => r.id !== item.id)
-    await saveLayoutData()
+    await saveLayoutData(false)
   } else if (type === 'obstacle') {
     layoutData.value.obstacles = (layoutData.value.obstacles || []).filter(o => o.id !== item.id)
-    await saveLayoutData()
+    await saveLayoutData(false)
   } else if (type === 'corridor') {
     layoutData.value.corridors = (layoutData.value.corridors || []).filter(c => c.id !== item.id)
-    await saveLayoutData()
+    await saveLayoutData(false)
   }
 
   selectedElement.value = null
@@ -1713,7 +1806,7 @@ function changeCorridorWidth(delta) {
   item.width = Math.max(10, Math.min(200, cur + delta))
   drawCorridors()
   drawSelectionHandles()
-  saveLayoutData(true)
+  saveLayoutData(false)
 }
 
 function changeCircleRadius(delta) {
@@ -1723,14 +1816,14 @@ function changeCircleRadius(delta) {
   item.radius = Math.max(10, Math.min(250, cur + delta))
   drawObstacles()
   drawSelectionHandles()
-  saveLayoutData(true)
+  saveLayoutData(false)
 }
 
 // Event handlers
 async function onPoiAdded() {
   addPoiModal.value = null
   await loadFloorData()
-  await triggerAutoGraph(false)
+  isGraphDirty.value = true
 }
 
 async function onFloorSelected(floor) {
@@ -1811,21 +1904,21 @@ function nudgeSelected(dx, dy) {
     if (Array.isArray(item.points)) {
       item.points = item.points.map(pt => [Math.round(pt[0] + dx), Math.round(pt[1] + dy)])
     }
-    saveLayoutData(true)
+    saveLayoutData(false)
   } else if (type === 'obstacle' && item.type === 'rect') {
     item.x = Math.round(item.x + dx)
     item.y = Math.round(item.y + dy)
-    saveLayoutData(true)
+    saveLayoutData(false)
   } else if (type === 'obstacle' && item.type === 'circle') {
     item.x = Math.round(item.x + dx)
     item.y = Math.round(item.y + dy)
-    saveLayoutData(true)
+    saveLayoutData(false)
   } else if (type === 'wall' || type === 'corridor') {
     item.x1 = Math.round(item.x1 + dx)
     item.y1 = Math.round(item.y1 + dy)
     item.x2 = Math.round(item.x2 + dx)
     item.y2 = Math.round(item.y2 + dy)
-    saveLayoutData(true)
+    saveLayoutData(false)
   } else if (type === 'poi') {
     const px = Math.round(Number(item.x_coord ?? item.x ?? 0) + dx)
     const py = Math.round(Number(item.y_coord ?? item.y ?? 0) + dy)
@@ -1834,7 +1927,7 @@ function nudgeSelected(dx, dy) {
     item.x = px
     item.y = py
     poisApi.update(item.id, { x_coord: px, y_coord: py }).then(() => {
-      triggerAutoGraph(false)
+      isGraphDirty.value = true
       refreshMapLayers()
     })
   }
@@ -1951,13 +2044,14 @@ onBeforeUnmount(() => {
         :generatingGraph="generatingGraph"
         :layoutCounts="layoutCounts"
         :corridorWidth="corridorWidth"
+        :is-graph-dirty="isGraphDirty"
         @update:corridorWidth="corridorWidth = $event"
         v-model:calibDistance="calibDistance"
         @select-floor="onFloorSelected"
         @floor-created="onFloorCreated"
         @upload-plan="showUpload = true; isMobileSidebarOpen = false"
         @set-mode="mode = $event; cancelDrawing(); cancelPolyRoom(); selectedElement = null; isMobileSidebarOpen = false"
-        @auto-graph="triggerAutoGraph(true)"
+        @auto-graph="handleBuildGraph"
         @toggle-show-graph="toggleShowGraph"
         @update:blueprintOpacity="updateBlueprintOpacity"
         @rotate-plan="handleRotatePlan"
@@ -1974,6 +2068,32 @@ onBeforeUnmount(() => {
 
     <!-- Map Area -->
     <div class="flex-1 relative overflow-hidden architectural-canvas" style="background: #070c18">
+      <!-- Floating Top Bar Action: Save & Build Navigation Graph -->
+      <div class="absolute top-4 right-4 z-20 flex items-center gap-2 pointer-events-auto">
+        <button
+          v-if="isGraphDirty"
+          @click="handleBuildGraph"
+          :disabled="generatingGraph || savingLayout"
+          class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xl backdrop-blur-md transition-all cursor-pointer active:scale-95 bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 ring-2 ring-amber-400/40 animate-pulse"
+          title="Планировка изменилась! Нажмите для пересчёта навигационного графа."
+        >
+          <span v-if="generatingGraph" class="spinner w-3.5 h-3.5 border-slate-950"></span>
+          <Zap v-else :size="14" />
+          <span>{{ generatingGraph ? 'Расчёт путей...' : '⚡ Сохранить и построить граф' }}</span>
+        </button>
+        <button
+          v-else
+          @click="handleBuildGraph"
+          :disabled="generatingGraph || savingLayout"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-md backdrop-blur-md transition-all cursor-pointer active:scale-95 bg-slate-900/85 hover:bg-slate-800 text-slate-200 border border-slate-700/80"
+          title="Навигационный граф актуален. Нажмите для принудительного пересчёта."
+        >
+          <span v-if="generatingGraph" class="spinner w-3 h-3 text-blue-400"></span>
+          <Zap v-else :size="13" class="text-blue-400" />
+          <span>{{ generatingGraph ? 'Расчёт...' : 'Обновить граф' }}</span>
+        </button>
+      </div>
+
       <!-- Mobile Floating Sidebar Toggle Button -->
       <button
         type="button"

@@ -120,12 +120,23 @@ const categoryInfo: Record<PoiCategory, { label: string; icon: any; color: strin
 
         <!-- Осмотреться в 360 -->
         <button
+          v-if="poi.panorama_id"
           type="button"
           class="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 border border-slate-700 font-semibold text-[11px] sm:text-xs transition-all cursor-pointer text-center leading-tight"
           @click="emit('openPanorama', poi)"
         >
           <Rotate3d class="w-3.5 h-3.5 text-purple-400 shrink-0" />
           <span class="truncate">Тур 360°</span>
+        </button>
+        <button
+          v-else
+          type="button"
+          disabled
+          class="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-2xl bg-slate-900/50 text-slate-500 border border-slate-800/60 font-medium text-[11px] sm:text-xs text-center leading-tight cursor-not-allowed opacity-60"
+          title="Для этой точки панорама 360° отсутствует"
+        >
+          <Rotate3d class="w-3.5 h-3.5 text-slate-600 shrink-0" />
+          <span class="truncate">Нет 360°</span>
         </button>
       </div>
     </div>

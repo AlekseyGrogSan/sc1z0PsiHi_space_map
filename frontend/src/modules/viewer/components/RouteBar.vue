@@ -8,9 +8,12 @@ interface Props {
   targetPoiTitle?: string
   originTitle?: string
   isPickingOrigin?: boolean
+  hasPanorama?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  hasPanorama: false,
+})
 
 const emit = defineEmits<{
   (e: 'reset'): void
@@ -147,6 +150,7 @@ const primaryInstruction = computed(() => {
 
       <!-- Дополнительная кнопка виртуального тура по маршруту -->
       <button
+        v-if="hasPanorama"
         type="button"
         class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
         @click="emit('openVirtualTour')"
